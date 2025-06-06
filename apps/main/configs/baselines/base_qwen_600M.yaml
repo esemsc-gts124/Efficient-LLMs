@@ -1,0 +1,17 @@
+model:
+  dim: 512
+  n_layers: 8
+  n_heads: 8
+  head_dim: 64
+  n_kv_heads: 4
+  rope_theta: 10000
+  multiple_of: 256
+
+train:
+  micro_bsz: 1
+  grad_accum: 16
+  lr: 3e-4
+  log_every: 10
+
+system:
+  precision: bf16
