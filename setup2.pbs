@@ -1,0 +1,59 @@
+#!/bin/bash
+#PBS -N lingua_setup
+#PBS -q v1_gpu72
+#PBS -l select=1:ncpus=12:mem=48gb:ngpus=1         
+#PBS -l walltime=05:00:00
+#PBS -o logs/lingua_setup_output.log
+#PBS -e logs/lingua_setup_error.log
+#PBS -j oe                                         
+
+mkdir -p logs
+
+module purge
+source "$HOME/miniconda3/etc/profile.d/conda.sh"
+
+# 1. Create or update env
+if ! conda env list | grep -q '^lingua'; then
+    echo ">>> Creating Conda env 'lingua' …"
+    conda create -y -n lingua \
+          python=3.11 \
+          pytorch=2.7 torchvision torchaudio \ # originally set to 2.3
+          pytorch-cuda=11.8 \
+          git-lfs ninja -c pytorch -c nvidia -c conda-forge
+fi
+
+conda activate lingua
+
+pip install -e $HOME/Efficient-LLMs  --no-deps
+
+# Pure-Python deps (idempotent)
+pip install --no-cache-dir -r "$HOME/Efficient-LLMs/requirements.txt"
+
+# Optional fast kernels (skip silently if wheel missing)
+pip install 'xformers>=0.0.29,<0.0.32' 2>/dev/null || true
+
+echo "-----------------------------------------------------------"
+python - <<'PY'
+import torch
+print("CUDA visible? ", torch.cuda.is_available())
+print("GPUs:         ", torch.cuda.device_count())
+print("Torch / CUDA: ", torch.__version__, torch.version.cuda)
+PY
+echo "-----------------------------------------------------------"
+
+# 2. Mini dataset
+DATA="$HOME/Efficient-LLMs/data/sanity/c4-00000.json"
+if [ ! -f "$DATA" ]; then
+    mkdir -p "$(dirname "$DATA")"
+    wget -q -O - https://huggingface.co/datasets/allenai/c4/resolve/main/en/c4-train.00000-of-01024.json.gz \
+        | gunzip > "$DATA"
+fi
+
+# 3. 10-step smoke test
+cd "$HOME/Efficient-LLMs"
+python -m apps.main.train \
+       apps/main/configs/baselines/base_qwen_600M.yaml \
+       dataset.path=data/sanity \
+       trainer.max_steps=10 \
+       logging.freq=1
+

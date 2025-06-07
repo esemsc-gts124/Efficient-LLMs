@@ -1,0 +1,61 @@
+#!/bin/bash
+#PBS -N lingua_setup
+#PBS -l walltime=05:00:00
+#PBS -l select=1:ncpus=8:mem=20gb:ngpus=1
+#PBS -o logs/lingua_setup_output.log
+#PBS -e logs/lingua_setup_error.log
+
+module purge
+source $HOME/miniconda3/etc/profile.d/conda.sh
+
+
+# 1. Recreate or update env
+if ! conda env list | grep -q '^lingua'; then
+	echo ">>> Creating Conda env 'lingua' ..."
+	conda create -y -n lingua \
+		python=3.11 \
+		pytorch=2.3 torchvision torchaudio \
+		pytorch-cuda=11.8 \
+		git-lfs ninja -c pytorch -c nvidia -c conda-forge
+fi
+
+conda activate lingua
+
+pip install --no-cache-dir -r $HOME/Efficient-LLMs/requirements.txt
+
+pip install 'xformers>=0.0.29,<0.0.32' || true
+pip install flash-attn==2.5.4 --no-build-isolation 2>/dev/null || \
+	echo "Flash-Attn wheel not found; skipping."
+
+
+# 2. Sanity check GPU
+python - <<'PY'
+import torch, importlib, sys
+print("CUDA visible? ", torch.cuda.is_available())
+print("GPUs:         ", torch.cuda.device_count())
+print("Torch / CUDA: ", torch.__version__, torch.version.cuda)
+try:
+    import flash_attn_2 as fa
+    print("Flash-Attn:   ", fa.__version__)
+except ModuleNotFoundError:
+    print("Flash-Attn:   NOT installed")
+PY
+echo "-----------------------------------------------------------"
+
+
+# 3. Mini dataset
+DATA=$HOME/Efficient-LLMs/data/sanity/c4-00000.json
+if [ ! -f "$DATA" ]; then
+  mkdir -p $(dirname "$DATA")
+  wget -q -O - https://huggingface.co/datasets/allenai/c4/resolve/main/en/c4-train.00000-of-01024.json.gz | \
+      gunzip > "$DATA"
+fi
+
+
+# 4. 10-step smoke test
+cd $HOME/Efficient-LLMs
+python apps/main/train.py \
+       apps/main/configs/baselines/base_qwen_600M.yaml \
+       dataset.path=data/sanity \
+       trainer.max_steps=10 \
+       logging.freq=1
