@@ -1,0 +1,20 @@
+#!/bin/bash
+#PBS -N test_run
+#PBS -l select=1:ncpus=1:mem=16gb:ngpus=1
+#PBS -l walltime=00:30:00
+#PBS -o logs/test_run_output.log
+#PBS -e logs/test_run_error.log
+#PBS -j oe
+
+# Load your conda environment
+source $HOME/miniconda3/etc/profile.d/conda.sh
+conda ativate lingua_250608
+
+# Navigate to Lingua repo directory
+cd /rds/general/user/gts124/home/Efficient-LLMs
+
+# Run a small job with limited steps
+python -m apps.main.train config=apps/main/configs/debug.yaml trainer.max_steps=100
+
+echo "Current directory: $(pwd)"
+echo "Activated environment: $(conda info --envs | grep '*')"

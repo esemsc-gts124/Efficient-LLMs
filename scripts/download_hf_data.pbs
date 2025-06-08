@@ -1,7 +1,7 @@
 #!/bin/bash
 #PBS -N download_dataset
-#PBS -l select=1:ncpus=4:mem=20gb:ngpus=0  # No GPU needed for downloading
-#PBS -l walltime=02:00:00  # 2 hours for download and preprocessing
+#PBS -l select=1:ncpus=4:mem=20gb:ngpus=0  
+#PBS -l walltime=02:00:00  
 #PBS -o logs/download_dataset_output.log
 #PBS -e logs/download_dataset_error.log
 #PBS -j oe
