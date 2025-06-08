@@ -1,10 +1,9 @@
 #!/bin/bash
 #PBS -N download_dataset
-#PBS -l select=1:ncpus=4:mem=20gb:ngpus=0  
+#PBS -l select=1:ncpus=4:mem=20gb
 #PBS -l walltime=02:00:00  
 #PBS -o logs/download_dataset_output.log
 #PBS -e logs/download_dataset_error.log
-#PBS -j oe
 
 # Load your Conda environment
 source $HOME/miniconda3/etc/profile.d/conda.sh
@@ -17,12 +16,9 @@ cd /rds/general/user/gts124/home/Efficient-LLMs
 mkdir -p ./data
 
 # Run the dataset download and preprocessing
-python setup/download_prepare_hf_data.py \ 
-	fineweb_edu 10 \
-	 --data_dir ./data \
-	 --seed 42 \
-	 --nchunks 1
+python setup/download_prepare_hf_data.py fineweb_edu 20 --data_dir ./data --seed 42 --nchunks 1
 
 # Debugging info
 echo "Current directory: $(pwd)"
 echo "Activated environment: $(conda info --envs | grep '*')"
+
