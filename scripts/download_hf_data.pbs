@@ -1,0 +1,28 @@
+#!/bin/bash
+#PBS -N download_dataset
+#PBS -l select=1:ncpus=4:mem=20gb:ngpus=0  # No GPU needed for downloading
+#PBS -l walltime=02:00:00  # 2 hours for download and preprocessing
+#PBS -o logs/download_dataset_output.log
+#PBS -e logs/download_dataset_error.log
+#PBS -j oe
+
+# Load your Conda environment
+source $HOME/miniconda3/etc/profile.d/conda.sh
+conda activate lingua_250608
+
+# Navigate to the Lingua repo
+cd /rds/general/user/gts124/home/Efficient-LLMs
+
+# Create the data directory if it doesn't exist
+mkdir -p ./data
+
+# Run the dataset download and preprocessing
+python setup/download_prepare_hf_data.py \ 
+	fineweb_edu 10 \
+	 --data_dir ./data \
+	 --seed 42 \
+	 --nchunks 1
+
+# Debugging info
+echo "Current directory: $(pwd)"
+echo "Activated environment: $(conda info --envs | grep '*')"
