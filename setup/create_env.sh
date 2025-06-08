@@ -25,7 +25,9 @@ env_prefix=lingua_$current_date
 
 # Create the conda environment
 
-source $CONDA_ROOT/etc/profile.d/conda.sh
+# source $CONDA_ROOT/etc/profile.d/conda.sh
+source $HOME/miniconda3/etc/profile.d/conda.sh
+
 conda create -n $env_prefix python=3.11 -y -c anaconda
 conda activate $env_prefix
 
