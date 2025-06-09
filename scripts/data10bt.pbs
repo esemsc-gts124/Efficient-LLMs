@@ -1,0 +1,58 @@
+#!/bin/bash
+#PBS -N download_10bt_dataset
+#PBS -l select=1:ncpus=4:mem=24gb
+#PBS -l walltime=04:00:00
+#PBS -o /rds/general/user/gts124/home/Efficient-LLMs/logs/download_10bt_data_output.log
+#PBS -e /rds/general/user/gts124/home/Efficient-LLMs/logs/download_10bt_data_error.log
+
+echo "Starting job at $(date)"
+
+# Check if logs directory exists and is writable
+LOG_DIR="/rds/general/user/gts124/home/Efficient-LLMs/logs"
+if [ ! -d "$LOG_DIR" ]; then
+    echo "Error: Log directory does not exist: $LOG_DIR"
+    exit 1
+fi
+if [ ! -w "$LOG_DIR" ]; then
+    echo "Error: Log directory is not writable: $LOG_DIR"
+    exit 1
+fi
+
+# Load Conda environment
+echo "Sourcing Conda script..."
+source $HOME/miniconda3/etc/profile.d/conda.sh || { echo "Failed to source Conda script"; exit 1; }
+echo "Activating environment lingua_250608..."
+conda activate lingua_250608 || { echo "Failed to activate Conda environment"; exit 1; }
+echo "Environment activated: $(conda info --envs | grep '*')"
+
+# Navigate to the repository directory
+REPO_DIR="/rds/general/user/gts124/home/Efficient-LLMs"
+echo "Changing directory to $REPO_DIR..."
+cd $REPO_DIR || { echo "Failed to change directory to $REPO_DIR"; exit 1; }
+echo "Current directory: $(pwd)"
+
+# Check if the Python script exists
+SCRIPT_PATH="setup/download_prepare_hf_data.py"
+if [ ! -f "$SCRIPT_PATH" ]; then
+    echo "Error: Python script not found: $SCRIPT_PATH"
+    exit 1
+fi
+
+# Create the data directory in ephemeral storage
+DATA_DIR="/rds/general/user/gts124/ephemeral/fw_edu_10b_data"
+echo "Creating data directory: $DATA_DIR..."
+mkdir -p $DATA_DIR || { echo "Failed to create data directory: $DATA_DIR"; exit 1; }
+echo "Data directory created: $DATA_DIR"
+
+# Check permissions on data directory
+if [ ! -w "$DATA_DIR" ]; then
+    echo "Error: Data directory is not writable: $DATA_DIR"
+    exit 1
+fi
+
+
+# Run the Python script
+echo "Running Python script..."
+python $SCRIPT_PATH fineweb_edu_10bt 20 --data_dir $DATA_DIR --seed 42 --nchunks 1 || { echo "Python script failed"; exit 1; }
+
+echo "Job completed at $(date)"
