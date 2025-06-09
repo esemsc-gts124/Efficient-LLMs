@@ -1,7 +1,0 @@
-usage: download_prepare_hf_data.py [-h] [--data_dir DATA_DIR] [--seed SEED]
-                                   [--nchunks NCHUNKS]
-                                   dataset memory
-download_prepare_hf_data.py: error: the following arguments are required: memory
-/var/spool/PBS/mom_priv/jobs/1220860.pbs.SC: line 21: fineweb_edu: command not found
-Current directory: /rds/general/user/gts124/home/Efficient-LLMs
-Activated environment: lingua_250608        * /rds/general/user/gts124/home/miniconda3/envs/lingua_250608

@@ -3,3 +3,5 @@
 *.ipynb
 slurm-*.out
 wandb
+crappy_scripts/*
+logs/*
