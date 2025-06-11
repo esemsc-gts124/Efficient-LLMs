@@ -1,6 +1,9 @@
 # Template config, need to change dump_dir, data.root_dir and data.tokenizer.path
 
-# dump_dir: !!CHANGETHIS!!
+# NOTE FROM GEORGE: dump_dir, data.root_dir, data.sources and data.tokenizer.path have been configured to my 
+# HPC filesystem, if you need to use this debug config then please change accordingly 
+
+dump_dir: /rds/general/user/gts124/home/Efficient-LLMs/checkpoints
 name: "debug"
 steps: 1000
 probe_freq: 100
@@ -25,15 +28,18 @@ model:
     n_heads: 8
 
 data:
-    root_dir: data/shuffled
+    # root_dir: /rds/general/user/gts124/ephemeral/fw_edu_10b_data/fineweb_edu_10bt_shuffled
+    root_dir: /rds/general/user/gts124/ephemeral/fw_edu_10b_data/fineweb_edu_10bt_shuffled
     sources:
-        dclm_baseline_1.0: 1.0
+        # dclm_baseline_1.0: 1.0
+        fineweb_edu_10bt: 1.0
     batch_size: 32
     prefetch_size: 64
     seq_len: 2048
     n_views: 2
     load_async: true
-    tokenizer:
+    tokenizer: 
+        path: /rds/general/user/gts124/home/Efficient-LLMs/tokenizer
         name: bytes
 
 profiling:
