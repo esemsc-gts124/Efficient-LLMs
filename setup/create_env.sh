@@ -11,6 +11,10 @@
 #SBATCH --mem=0
 #SBATCH --time=01:00:00
 
+# NOTE FROM GEORGE: This script is used to create the environment for my HPC
+# file system, if you wish to rerun it then please change the file path on 
+# line 33!!
+
 # Exit immediately if a command exits with a non-zero status
 set -e
 
@@ -25,8 +29,8 @@ env_prefix=lingua_$current_date
 
 # Create the conda environment
 
-# source $CONDA_ROOT/etc/profile.d/conda.sh
-source $HOME/miniconda3/etc/profile.d/conda.sh
+# source $CONDA_ROOT/etc/profile.d/conda.sh  # original line that was in the lingua repo
+source $HOME/miniconda3/etc/profile.d/conda.sh  # George's path to conda
 
 conda create -n $env_prefix python=3.11 -y -c anaconda
 conda activate $env_prefix
