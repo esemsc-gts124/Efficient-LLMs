@@ -29,6 +29,9 @@ from lingua.distributed import (
     get_world_size,
     setup_torch_distributed,
 )
+# monkeypatch for logging
+from lm_eval.utils import setup_logging as _setup_logging   # real helper
+lm_eval.setup_logging = getattr(lm_eval, "setup_logging", _setup_logging)
 
 EVAL_FOLDER_NAME = "{:010d}"
 
@@ -244,9 +247,12 @@ def launch_eval(cfg: EvalArgs):
     logger.info("Model loaded")
     model.eval()
     generator = PackedCausalTransformerGenerator(cfg.generator, model, tokenizer)
-
+    
     wrap = EvalHarnessLM(generator)
-    results = simple_evaluate(wrap, **asdict(cfg.harness))
+    kwargs = asdict(cfg.harness)
+    if "verbosity" in kwargs: #  monkeypatch for verbosity typo
+        kwargs["verbostiy"] = kwargs.pop("verbosity")
+    results = simple_evaluate(wrap, **kwargs)
     val_results =  None
     if cfg.validation:
         val_results = eval_on_val(generator, cfg.validation, train_cfg)
