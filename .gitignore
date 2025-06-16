@@ -7,3 +7,4 @@ crappy_scripts/*
 logs/*
 checkpoints/*
 tokenizer/*
+data/*
