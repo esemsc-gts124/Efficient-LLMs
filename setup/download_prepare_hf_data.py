@@ -129,7 +129,7 @@ def main(dataset, memory, data_dir, seed=42, nchunks=32):
         f"ulimit -n 100000 && "
         f"find {src_dir} -type f -name '*{orig_extension}' -print0 | xargs -0 -I {{}} sh -c '{cat_command}' | {terashuf_executable} | "
         f"split -n r/{nchunks} -d --suffix-length 2 --additional-suffix {suffix} - {out_dir}/{prefix}"
-        "; trap 'echo \"Caught signal 13, exiting with code 1\"; exit 1' SIGPIPE;"
+#        "; trap 'echo \"Caught signal 13, exiting with code 1\"; exit 1' SIGPIPE;" trap is unnecessary and causes crash
     )
 
     # Create validation set and remove lines from chunks
