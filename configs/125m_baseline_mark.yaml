@@ -1,7 +1,7 @@
 # Template config, need to change dump_dir, data.root_dir and data.tokenizer.path
 
-dump_dir: /net/projects2/interp/efficient_llms_dumps/40m_runs/6-17_0
-name: "40M_Baseline_tied"
+dump_dir: /net/projects2/interp/efficient_llms_dumps/125m_runs/6-17_1
+name: "125M_Baseline_tied"
 steps: 763000
 probe_freq: 5000
 seed: 777
@@ -20,7 +20,7 @@ distributed:
     dp_shard: 1
 
     # dp_replicate should be your total number of GPUs
-    dp_replicate: 4
+    dp_replicate: 1
     compile: true
     model_dtype: bf16
     matmul_allow_tf32: false
@@ -28,8 +28,8 @@ distributed:
     tp_size: 1
 
 model:
-    dim: 512
-    ffn_dim_multiplier: 1.125
+    dim: 768
+    ffn_dim_multiplier: 1.25
     n_layers: 12
     n_heads: 16
     n_kv_heads: 8
@@ -39,8 +39,8 @@ data:
     root_dir: /net/projects2/interp/Efficient-LLMs/data
     sources:
         fineweb_edu_10bt_shuffled: 1.0
-    batch_size: 64
-    prefetch_size: 32
+    batch_size: 48
+    prefetch_size: 16
     seq_len: 2048
     n_views: 2
     load_async: true

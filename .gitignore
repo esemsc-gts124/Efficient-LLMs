@@ -8,3 +8,5 @@ logs/*
 checkpoints/*
 tokenizer/*
 data/*
+data_8gpu/*
+.venv/*

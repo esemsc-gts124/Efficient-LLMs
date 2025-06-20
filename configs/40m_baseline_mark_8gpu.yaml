@@ -1,14 +1,14 @@
 # Template config, need to change dump_dir, data.root_dir and data.tokenizer.path
 
-dump_dir: /net/projects2/interp/efficient_llms_dumps/40m_runs/6-17_0
-name: "40M_Baseline_tied"
-steps: 763000
+dump_dir: /net/projects2/interp/efficient_llms_dumps/40m_shared/6-18_2
+name: "40M_Baseline_shared"
+steps: 10500
 probe_freq: 5000
 seed: 777
 optim:
     lr: 3e-4
     warmup: 2000
-    lr_min_ratio: 0.000001
+    lr_min_ratio: 1.0
     clip: 10.0
 
 distributed:
@@ -20,7 +20,7 @@ distributed:
     dp_shard: 1
 
     # dp_replicate should be your total number of GPUs
-    dp_replicate: 4
+    dp_replicate: 8
     compile: true
     model_dtype: bf16
     matmul_allow_tf32: false
@@ -33,10 +33,9 @@ model:
     n_layers: 12
     n_heads: 16
     n_kv_heads: 8
-    weight_tying: true
 
 data:
-    root_dir: /net/projects2/interp/Efficient-LLMs/data
+    root_dir: /net/projects2/interp/Efficient-LLMs/data_8gpu
     sources:
         fineweb_edu_10bt_shuffled: 1.0
     batch_size: 64
@@ -66,17 +65,4 @@ logging:
         entity: "muchanem" # e.g., 'jovyan'
         name: "40M_DDP_run_0"
 
-eval:
-    generator:
-        max_tokens: 8192
-        dtype: bf16
-        temperature: 1.0
-        top_p: 0.95
-    harness:
-        tasks:
-            - hellaswag
-            - piqa
-            - task: nq_open
-              num_fewshot: 5
-    validation: null
-#        max_steps: 100
+eval: null
