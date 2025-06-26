@@ -1,8 +1,9 @@
+from numpy._core.numerictypes import bool_
 import torch
 from torch import nn
 from torch.nn import functional as F
 
-from typing import Optional, Union
+from typing import Optional, Union, Tuple
 from xformers.ops import fmha, AttentionBias
 from torch.nn.attention.flex_attention import (
     BlockMask,
@@ -10,37 +11,41 @@ from torch.nn.attention.flex_attention import (
 )
 import math
 
-from lingua.transformer import apply_rotary_emb, flex_attention_comp, repeat_kv
+from lingua.transformer import apply_rotary_emb, flex_attention_comp, repeat_kv, TiedLinear
 
-
-def shared_plus_lora(shared_proj, lora_proj, n_heads, head_dim):
+def broadcast_add(base: torch.Tensor, delta: torch.Tensor,
+                  *, dim: int = -1, g: int = 1) -> torch.Tensor:
     """
-    shared_proj : (B, S, head_dim)                – base weight produces ONE head
-    lora_proj   : (B, S, n_heads * head_dim)      – LoRA produces per-head delta
-    returns     : (B, S, n_heads * head_dim)      – broadcast + add
+    base  : (..., g*D, ...)          – shared projection (smaller)
+    delta : (..., H*D, ...)          – per-head LoRA delta (bigger)
+    dim   : dimension that holds g*D or H*D
+    g     : #templates shared inside each group  (g == 1 ⇒ full sharing)
+    returns a tensor shaped like `delta`, equal to broadcast(base) + delta
     """
-    B, S, _ = shared_proj.shape
-    shared = (shared_proj
-              .unsqueeze(2)                       # (B,S,1,D)
-              .expand(B, S, n_heads, head_dim)    # (B,S,H,D)
-              .reshape(B, S, n_heads * head_dim)) # (B,S,H*D)
-    return shared + lora_proj
+    if dim < 0:
+        dim += base.dim()            # canonicalise
 
-def project_output(x, wo_base, wo_lora):
-    """
-    x        : (B, S, H, D)   – attention result
-    wo_base  : nn.Linear(D, E) – shared across heads
-    wo_lora  : LoRAModule(H*D, E)
+    # ----- shapes & sanity -------------------------------------------------
+    big  = delta.shape[dim]          # H*D
+    small = base.shape[dim]          # g*D
+    assert big % small == 0,  "delta and base feature dims incompatible"
+    heads_per_group = big // small   # H / g
+    D = small // g                   # single-head feature size
 
-    returns  : (B, S, E)
-    """
-    B, S, H, D = x.shape
-    # shared path – one weight reused for every head
-    base = wo_base(x)          # (B,S,H,E) because nn.Linear acts on last dim
-    base = base.sum(dim=2)     # (B,S,E)   aggregate heads (same as concat+matmul)
+    # ----- reshape base to (..., g, D, ...) -------------------------------
+    new_shape = list(base.shape)
+    new_shape[dim:dim+1] = [g, D]    # split the feature dim
+    base = base.reshape(*new_shape)
 
-    # LoRA delta – full (H*D) view
-    delta = wo_lora(x.reshape(B, S, H*D))  # (B,S,E)
+    # ----- expand over heads_per_group ------------------------------------
+    # insert a broadcast axis right after 'g'
+    base = base.unsqueeze(dim + 1)                              # (..., g, 1, D, ...)
+    base = base.expand(*base.shape[:dim+1], heads_per_group, D,
+                       *base.shape[dim+3:])                     # (..., g, H/g, D, ...)
+
+    # ----- flatten back to (..., H*D, ...) -------------------------------
+    flat_shape = list(delta.shape)
+    base = base.reshape(*flat_shape)   # now exactly the same shape as delta
 
     return base + delta
 
@@ -50,40 +55,56 @@ class LoRAModule(nn.Module):
         in_dim,
         out_dim,
         rank=8,
-        alpha=16,
-        bias=False):
+        bias=False,
+        w_a_override=None,
+        w_b_override=None):
 
         super().__init__()
 
         self.in_dim = in_dim
         self.out_dim = out_dim
         self.rank = rank
-        self.alpha = alpha
+        self.alpha = rank*2
         self.bias = bias
 
         # LoRA params
-        self.w_a = nn.Linear(
-            in_dim,
+        if w_a_override is not None:
+            self.w_a = w_a_override
+        else:
+            self.w_a = nn.Linear(
+                in_dim,
             rank,
             bias=False,
         )  # A matrix
 
-        self.w_b = nn.Linear(
-            rank,
-            out_dim,
-            bias=False,
+        if w_b_override is not None:
+            self.w_b = w_b_override
+        else:
+            self.w_b = nn.Linear(
+                rank,
+                out_dim,
+                bias=False,
         )  # B matrix
+
     def reset_parameters(self):
         nn.init.kaiming_uniform_(self.w_a.weight, a=math.sqrt(5))
         nn.init.zeros_(self.w_b.weight)
 
 
-
+    @torch._dynamo.disable
     def forward(self, x):
         #  low-rank update
         lora = self.w_b(self.w_a(x)) * (self.alpha / self.rank)
         return lora
+def str_to_attr(s: str):
+    if s == 'q':
+        return 'wq_base'
+    if s == 'k':
+        return 'wk_base'
+    if s == 'v':
+        return 'wv_base'
 
+    raise ValueError(f"Invalid weight name: {s}")
 class Attention(nn.Module):
     def __init__(
         self,
@@ -92,6 +113,11 @@ class Attention(nn.Module):
         n_heads: int,
         n_kv_heads: int,
         rope_theta: float,
+        qkv_sharing: Optional[Tuple[Tuple[str, ...], ...]],
+        head_sharing: bool,
+        grouping: int,
+        two_step: bool,
+        rank: int
     ):
         super().__init__()
 
@@ -102,46 +128,103 @@ class Attention(nn.Module):
         self.n_heads = n_heads
         self.n_kv_heads = n_kv_heads
         self.heads_per_group = self.n_heads // self.n_kv_heads
+        self.qkv_sharing = qkv_sharing
+        self.head_sharing = head_sharing
+        self.grouping = grouping if grouping else 1
+        self.two_step = two_step
+        self.rank = rank
 
-        self.wq = nn.Linear(
-            dim,
-            1 * head_dim,
-            bias=False,
-        )
-        self.wq_share = LoRAModule(
-            dim,
-            n_heads * head_dim,
-            bias=False
-        )
+        if qkv_sharing:
+            self.n_kv_heads = n_heads
+            n_kv_heads = n_heads
+            # note this means no GQA if there's any q sharing sharing
+            base_dim = head_dim*self.grouping if head_sharing else head_dim*n_heads
+            for weight_group in qkv_sharing:
+                for i, weight_name in enumerate(weight_group):
+                    if i == 0:
+                        w_base = nn.Linear(
+                            dim,
+                            base_dim,
+                            bias=False
+                        )
+                        setattr(self, str_to_attr(weight_name), w_base)
+                    else:
+                        w = TiedLinear(w_base)
+                        setattr(self, str_to_attr(weight_name), w)
+        else:
+            self.wq_base = nn.Linear(
+                dim,
+                head_dim * (self.grouping if head_sharing else n_heads),
+                bias=False,
+            )
 
-        self.wk = nn.Linear(
-            dim,
-            1 * head_dim,
-            bias=False,
-        )
-        self.wk_share = LoRAModule(
-            dim,
-            n_kv_heads * head_dim,
-            bias=False,
-        )
+            self.wk_base = nn.Linear(
+                dim,
+                head_dim * (self.grouping if head_sharing else n_kv_heads),
+                bias=False,
+            )
 
-        self.wv = nn.Linear(
-            dim,
-            1 * head_dim,
-            bias=False,
-        )
-        self.wv_share = LoRAModule(
-            dim,
-            n_kv_heads * head_dim,
-            bias=False,
-        )
+            self.wv_base = nn.Linear(
+                dim,
+                head_dim * (self.grouping if head_sharing else n_kv_heads),
+                bias=False,
+            )
+        if two_step:
+            self.head_offset = LoRAModule(
+                dim,
+                n_heads * head_dim,
+                rank=rank,
+                bias=False
+            )
+
+            self.wq_only_offset = LoRAModule(
+                dim,
+                head_dim,
+                rank=rank,
+                bias=False
+            )
+
+            self.wk_only_offset = LoRAModule(
+                dim,
+                head_dim,
+                rank=rank,
+                bias=False
+            )
+
+            self.wv_only_offset = LoRAModule(
+                dim,
+                head_dim,
+                rank=rank,
+                bias=False
+            )
+        else:
+            #offset_n_heads = n_heads if head_sharing else 1
+            #offset_n_kv_heads = n_kv_heads if head_sharing else 1
+
+            self.wq_offset = LoRAModule(
+                dim,
+                n_heads * head_dim,
+                rank=rank,
+                bias=False
+            )
+
+
+            self.wk_offset = LoRAModule(
+                dim,
+                n_kv_heads * head_dim,
+                rank=rank,
+                bias=False,
+            )
+
+
+            self.wv_offset = LoRAModule(
+                dim,
+                n_kv_heads * head_dim,
+                rank=rank,
+                bias=False,
+            )
 
         self.wo = nn.Linear(
-            1 * head_dim,
-            dim,
-            bias=False,
-        )
-        self.wo_share = nn.Linear(
             n_heads * head_dim,
             dim,
             bias=False,
@@ -156,30 +239,39 @@ class Attention(nn.Module):
     ) -> torch.Tensor:
         # B S D
         bsz, seq_len, dim = x.shape
-        # ---- projections ---------------------------------------------------------
-        q_base = self.wq(x)           # (B,S,D)
-        q_offset = self.wq_share(x)           # (B,S,H*D)
-        xq = shared_plus_lora(q_base, q_offset,
-                              n_heads=self.n_heads,
-                              head_dim=self.head_dim)
 
-        k_base = self.wk(x)
-        k_offset = self.wk_share(x)
-        xk = shared_plus_lora(k_base, k_offset,
-                              n_heads=self.n_kv_heads,
-                              head_dim=self.head_dim)
 
-        v_base = self.wv(x)
-        v_offset = self.wv_share(x)
-        xv = shared_plus_lora(v_base, v_offset,
-                              n_heads=self.n_kv_heads,
-                              head_dim=self.head_dim)
+        q_base = self.wq_base(x)
+        k_base = self.wk_base(x)
+        v_base = self.wv_base(x)
+
+        if self.two_step:
+            head_offset = self.head_offset(x)
+            wq_only_offset = self.wq_only_offset(x)
+            wk_only_offset = self.wk_only_offset(x)
+            wv_only_offset = self.wv_only_offset(x)
+
+            wq_offset = broadcast_add(wq_only_offset, head_offset).contiguous()
+            wk_offset = broadcast_add(wk_only_offset, head_offset).contiguous()
+            wv_offset = broadcast_add(wv_only_offset, head_offset).contiguous()
+        else:
+            wq_offset = self.wq_offset(x)
+            wk_offset = self.wk_offset(x)
+            wv_offset = self.wv_offset(x)
+
+        xq = broadcast_add(q_base, wq_offset, g=self.grouping)
+        xk = broadcast_add(k_base, wk_offset, g=self.grouping)
+        xv = broadcast_add(v_base, wv_offset, g=self.grouping)
 
         output_shape = xq.shape
         # B S D -> B S H D
         xq = xq.view(bsz, seq_len, self.n_heads, self.head_dim)
-        xk = xk.view(bsz, seq_len, self.n_kv_heads, self.head_dim)
-        xv = xv.view(bsz, seq_len, self.n_kv_heads, self.head_dim)
+        if not self.qkv_sharing:
+            xk = xk.view(bsz, seq_len, self.n_kv_heads, self.head_dim)
+            xv = xv.view(bsz, seq_len, self.n_kv_heads, self.head_dim)
+        else:
+            xk = xk.view(bsz, seq_len, self.n_heads, self.head_dim)
+            xv = xv.view(bsz, seq_len, self.n_heads, self.head_dim)
 
         xq, xk = apply_rotary_emb(xq, xk, 1, freq_cis[0:seq_len])
 
@@ -188,8 +280,10 @@ class Attention(nn.Module):
         if hasattr(self, "kv_cache"):
             xk, xv = self.kv_cache.update(xk, xv, tok_idx)
 
-        xk = repeat_kv(xk, self.heads_per_group, dim=2)
-        xv = repeat_kv(xv, self.heads_per_group, dim=2)
+        # since qkv sharing means we don't use GQA so no need to repeat kv
+        if not self.qkv_sharing:
+            xk = repeat_kv(xk, self.heads_per_group, dim=2)
+            xv = repeat_kv(xv, self.heads_per_group, dim=2)
 
         if attn_impl == "flex_attention":
             assert mask is None or isinstance(mask, BlockMask)
@@ -220,31 +314,40 @@ class Attention(nn.Module):
                 f"Attention implementation {attn_impl} not supported"
             )
 
-        output = project_output(output, self.wo, self.wo_share)
-        #output = self.wo(output.reshape(output_shape)) #+ self.wo_share(x.view_as(x)) but broadcast over the factor of n_heads larger out dim
+        output = self.wo(output.reshape(output_shape))
 
         return output
 
     def reset_parameters(self, init_std=None, factor=1.0):
         init_std = init_std or (self.dim ** (-0.5))
 
-        for w in [self.wq, self.wk, self.wv]:
-            nn.init.trunc_normal_(
-                w.weight.weight,
-                mean=0.0,
-                std=init_std,
-                a=-3 * init_std,
-                b=3 * init_std,
-            )
-
+        for attr in ['wq_base', 'wk_base', 'wv_base']:
+            if hasattr(self, attr):
+                w = getattr(self, attr)
+                if hasattr(w, 'weight'):  # Check if it's a real Linear layer, not TiedLinear
+                    nn.init.trunc_normal_(
+                        w.weight,
+                        mean=0.0,
+                        std=init_std,
+                        a=-3 * init_std,
+                        b=3 * init_std,
+                    )
 
         nn.init.trunc_normal_(
-            self.wo.weight.weight,
+            self.wo.weight,
             mean=0.0,
             std=init_std / factor,
             a=-3 * init_std,
             b=3 * init_std,
         )
 
-        for w in [self.wq_share, self.wk_share, self.wv_share, self.wo_share]:
-            w.reset_parameters()
+        # Initialize LoRA modules
+        if self.two_step:
+            self.head_offset.reset_parameters()
+            self.wq_only_offset.reset_parameters()
+            self.wk_only_offset.reset_parameters()
+            self.wv_only_offset.reset_parameters()
+        else:
+            self.wq_offset.reset_parameters()
+            self.wk_offset.reset_parameters()
+            self.wv_offset.reset_parameters()
