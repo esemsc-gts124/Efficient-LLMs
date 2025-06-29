@@ -62,13 +62,24 @@ def causal_mask(b, h, q_idx, kv_idx):
 
 @dataclass
 class LMTransformerArgs(BaseTransformerArgs):
-
     seed: int = 42
-
+    rank: int = -1
     vocab_size: int = -1
     weight_tying: bool = False
-
     sliding_window: Optional[int] = None
+
+
+# George: Factorise the output layer for weight tying also
+class FactorisedTiedLinear(nn.Module):
+    def __init__(self, tok_embeddings1: nn.Embedding, tok_embeddings2: nn.Linear):
+        super().__init__()
+        self.tok_embeddings1 = tok_embeddings1
+        self.tok_embeddings2 = tok_embeddings2
+
+    def forward(self, x: torch.Tensor):
+        intermediate = torch.matmul(x, self.tok_embeddings2.weight)
+        logits = torch.matmul(intermediate, self.tok_embeddings1.weight.t())
+        return logits
 
 
 class LMTransformer(BaseTransformer):
@@ -79,18 +90,31 @@ class LMTransformer(BaseTransformer):
 
         assert args.vocab_size > 0
 
-        self.tok_embeddings = torch.nn.Embedding(args.vocab_size, args.dim)
+        # Use factorised embeddings if rank is specified, else use original Lingua embeddings
+        if args.rank > 0:
+            self.use_factorised = True
+            self.tok_embeddings1 = torch.nn.Embedding(args.vocab_size, args.rank)
+            self.tok_embeddings2 = torch.nn.Linear(args.rank, args.dim)
+        else:
+            self.use_factorised = False
+            self.tok_embeddings = torch.nn.Embedding(args.vocab_size, args.dim)
 
         self.norm = RMSNorm(args.dim, eps=args.norm_eps)
 
+
+        # Configure output layer based on weight tying and embedding type
         if args.weight_tying:
-            self.output = TiedLinear(self.tok_embeddings)
+            if self.use_factorised:
+                self.output = FactorisedTiedLinear(self.tok_embeddings1, self.tok_embeddings2)
+            else:
+                self.output = TiedLinear(self.tok_embeddings)
         else:
             self.output = nn.Linear(
                 args.dim,
                 args.vocab_size,
                 bias=False,
             )
+
 
     def forward(
         self,
@@ -102,7 +126,12 @@ class LMTransformer(BaseTransformer):
     ):
         bsz, seqlen = token_values.shape
 
-        h = self.tok_embeddings(token_values)
+        # Compute embeddings based on whether factorised embeddings are used
+        if self.use_factorised:
+            tok_emb = self.tok_embeddings1(token_values)
+            h = self.tok_embeddings2(tok_emb)
+        else:
+            h = self.tok_embeddings(token_values)
 
         mask = (
             mask
@@ -123,13 +152,31 @@ class LMTransformer(BaseTransformer):
         super().reset_parameters()
         init_std = init_std or (self.dim ** (-0.5))
         self.norm.reset_parameters()
-        nn.init.trunc_normal_(
-            self.tok_embeddings.weight,
-            mean=0.0,
-            std=init_std,
-            a=-3 * init_std,
-            b=3 * init_std,
-        )
+
+        # Initialise embedding weights based on embedding type
+        if self.use_factorised:
+            nn.init.trunc_normal_( # Factorised
+                self.tok_embeddings1.weight,
+                mean=0.0,
+                std=init_std,
+                a=-3 * init_std,
+                b=3 * init_std,
+            )
+            nn.init.trunc_normal_( # Factorised
+                self.tok_embeddings2.weight,
+                mean=0.0,
+                std=init_std,
+                a=-3 * init_std,
+                b=3 * init_std,
+            )
+        else:
+            nn.init.trunc_normal_( # Original lingua embeddings
+                self.tok_embeddings.weight,
+                mean=0.0,
+                std=init_std,
+                a=-3 * init_std,
+                b=3 * init_std,
+            )
         if not self.weight_tying:
             nn.init.trunc_normal_(
                 self.output.weight,
@@ -150,7 +197,11 @@ def build_fsdp_grouping_plan(model_args: LMTransformerArgs):
     group_plan: Tuple[int, bool] = []
 
     # Grouping and output seperately
-    group_plan.append(("tok_embeddings", False))
+    if model_args.rank > 0:
+        group_plan.append(("tok_embeddings1", False))  # Factorised 
+        group_plan.append(("tok_embeddings2", False))  # Factorised 
+    else:
+        group_plan.append(("tok_embeddings", False)) # Original lingua embeddings
 
     # Grouping by layers
     for i in range(model_args.n_layers):
@@ -171,9 +222,19 @@ def tp_parallelize(model, tp_mesh, model_args: LMTransformerArgs, distributed_ar
 
     # Embedding layer tp
     main_plan = {}
-    main_plan["tok_embeddings"] = ColwiseParallel(
-        input_layouts=Replicate(), output_layouts=Shard(1)
-    )
+
+    if model_args.rank > 0:
+        main_plan["tok_embeddings1"] = ColwiseParallel( # Factorised embeddings
+            input_layouts=Replicate(), output_layouts=Shard(1)
+        )
+        main_plan["tok_embeddings2"] = RowwiseParallel(
+            input_layouts=Shard(1), output_layouts=Replicate()
+        )
+    else:
+        main_plan["tok_embeddings"] = ColwiseParallel( # Original Lingua embeddings
+            input_layouts=Replicate(), output_layouts=Shard(1)
+        )
+
     main_plan["norm"] = SequenceParallel()
     main_plan["output"] = ColwiseParallel(
         input_layouts=Shard(1), output_layouts=Replicate()
