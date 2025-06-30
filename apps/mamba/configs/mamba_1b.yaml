@@ -1,18 +1,13 @@
-# Template config, need to change dump_dir, data.root_dir and tokenizer.path
-
-# dump_dir: !!CHANGETHIS!!
-name: "debug"
-steps: 60_000
-probe_freq: null #100
-
+name: debug
+steps: 60000
+probe_freq: null
 seed: 777
 optim:
-  lr: 3.0e-3
+  lr: 0.003
   weight_decay: 0.033
   warmup: 5000
-  lr_min_ratio: 0.000001
+  lr_min_ratio: 1.0e-06
   clip: 1.0
-
 distributed:
   fsdp_type: full_shard
   compile: true
@@ -20,7 +15,6 @@ distributed:
   matmul_allow_tf32: false
   selective_activation_checkpointing: true
   tp_size: 1
-
 model:
   dim: 2048
   n_heads: 32
@@ -33,7 +27,6 @@ model:
   init_args:
     A_init_min: 0.01
     A_init_max: 2
-
 data:
   root_dir: data/shuffled
   sources:
@@ -48,10 +41,8 @@ data:
   tokenizer:
     name: tiktoken
     path: tokenizers/cl_toplang_128k.tiktoken
-
 profiling:
   run: true
-
 checkpoint:
   dump:
     every: 2500
@@ -59,33 +50,27 @@ checkpoint:
   eval:
     every: 5000
     keep: 2
-
 logging:
   freq: 1
-
 async_eval_gpus: 8
 eval:
   harness:
     tasks:
-      - hellaswag
-      - task: boolq
-        dataset_kwargs:
-          trust_remote_code: true
-      - piqa
-      - task: social_iqa
-        dataset_kwargs:
-          trust_remote_code: true
-      - winogrande
-      - openbookqa
-      - arc_easy
-      - arc_challenge
-      - race
-      - commonsense_qa
-      - copa
-      # - coqa
-      # - task: nq_open
-      #   num_fewshot: 5
-      # - triviaqa
+    - hellaswag
+    - task: boolq
+      dataset_kwargs:
+        trust_remote_code: true
+    - piqa
+    - task: social_iqa
+      dataset_kwargs:
+        trust_remote_code: true
+    - winogrande
+    - openbookqa
+    - arc_easy
+    - arc_challenge
+    - race
+    - commonsense_qa
+    - copa
   validation:
     max_steps: 1000
   generator:

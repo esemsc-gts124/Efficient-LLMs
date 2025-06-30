@@ -141,7 +141,7 @@ class YamlPathUpdater:
         print(f"Found {len(all_paths)} paths across {len(self.yaml_files)} YAML files")
 
         # Find the common base path
-        old_base = self.find_common_base(all_paths)
+        old_base = "/net/projects2/interp" #self.find_common_base(all_paths)
 
         if not old_base:
             print("Could not determine a common base path.")

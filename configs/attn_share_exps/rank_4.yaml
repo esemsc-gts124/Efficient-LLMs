@@ -1,5 +1,5 @@
-dump_dir: /home/jovyan/workspace/efficient_llms_dumps/40m_shared/rank_64
-name: rank_64
+dump_dir: /home/jovyan/workspace/efficient_llms_dumps/40m_shared/rank_4
+name: rank_4
 steps: 10500
 probe_freq: 5000
 seed: 777
@@ -27,7 +27,7 @@ model:
     head_sharing: true
     qkv_sharing: null
     grouping: 1
-    rank: 64
+    rank: 4
     two_step: false
 data:
     root_dir: /home/jovyan/workspace/Efficient-LLMs/data_8gpu
@@ -45,10 +45,10 @@ profiling:
     run: true
 checkpoint:
     dump:
-        every: 11500
+        every: 10500
         keep: 1
     eval:
-        every: 11500
+        every: 10500
         keep: 1
 logging:
     freq: 500

@@ -1,7 +1,5 @@
-# Template config, need to change dump_dir, data.root_dir and data.tokenizer.path
-
-dump_dir: /net/projects2/interp/efficient_llms_dumps/40m_shared/rank_16
-name: "rank_16"
+dump_dir: /home/jovyan/workspace/efficient_llms_dumps/40m_shared/rank_16
+name: rank_16
 steps: 10500
 probe_freq: 5000
 seed: 777
@@ -10,65 +8,49 @@ optim:
     warmup: 2000
     lr_min_ratio: 1.0
     clip: 10.0
-
 distributed:
-    #fsdp_type: full_shard
-    # Change fsdp_type to no_shard to mimic DDP behavior
     fsdp_type: no_shard
-
-    # When using no_shard, dp_shard must be 1
     dp_shard: 1
-
-    # dp_replicate should be your total number of GPUs
     dp_replicate: 8
     compile: true
     model_dtype: bf16
     matmul_allow_tf32: false
     selective_activation_checkpointing: false
     tp_size: 1
-
 model:
     dim: 512
     ffn_dim_multiplier: 1.125
     n_layers: 12
     n_heads: 16
     n_kv_heads: 8
-    attn_sharing: True
-    head_sharing: True
+    attn_sharing: true
+    head_sharing: true
     qkv_sharing: null
     grouping: 1
     rank: 16
-    two_step: False
-
+    two_step: false
 data:
-    root_dir: /net/projects2/interp/Efficient-LLMs/data_8gpu
+    root_dir: /home/jovyan/workspace/Efficient-LLMs/data_8gpu
     sources:
         fineweb_edu_10bt_shuffled: 1.0
     batch_size: 64
-    prefetch_size: 32
+    prefetch_size: 8
     seq_len: 2048
     n_views: 2
     load_async: true
     tokenizer:
         name: sp
-        path: /net/projects2/interp/Efficient-LLMs/tokenizer/llama2/tokenizer.model
-
+        path: /home/jovyan/workspace/Efficient-LLMs/tokenizer/llama2/tokenizer.model
 profiling:
     run: true
-
 checkpoint:
     dump:
-        every: 5000
+        every: 10500
         keep: 1
-    eval:
-        every: 5000
-        keep: 1
-
 logging:
     freq: 500
     wandb:
-        project: "40m_baseline"
-        entity: "muchanem" # e.g., 'jovyan'
-        name: "40M_DDP_run_0"
-
+        project: 40m_baseline
+        entity: muchanem
+        name: 40M_DDP_run_0
 eval: null
