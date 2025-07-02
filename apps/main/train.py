@@ -103,6 +103,8 @@ class TrainArgs:
     async_eval_gpus: Optional[int] = None
     eval: Optional[Any] = None
 
+    parameter_count: Optional[int] = 0
+
 
 @dataclass
 class TrainState(Stateful):
@@ -287,6 +289,7 @@ def train(args: TrainArgs):
         # log model size
 
         logger.info(f"Model size: {model_param_count:,} total parameters")
+        args.parameter_count = model_param_count
 
         gpu_memory_monitor = GPUMemoryMonitor("cuda")
         logger.info(

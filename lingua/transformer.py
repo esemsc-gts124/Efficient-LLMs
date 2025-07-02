@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional, Union, Tuple, List
 
@@ -19,6 +19,7 @@ from lingua import probe
 
 flex_attention_comp = torch.compile(flex_attention)
 
+from .lora_moe import LoRAMoE, MoERouter
 
 class InitStdFactor(Enum):
     DISABLED = "disabled"  # Init std is divided by 1.0
@@ -27,6 +28,11 @@ class InitStdFactor(Enum):
     DIM_RATIO = "dim_ratio"  # Init std is divided by model_dim/4096
 
 
+@dataclass
+class LoRAMoEArgs:
+    use: bool = False
+    num_experts: int = 8
+    rank: int = 8
 @dataclass
 class BaseTransformerArgs:
     dim: int = 512
@@ -56,6 +62,9 @@ class BaseTransformerArgs:
     two_step: bool = False
 
     freeze_attn: bool = False
+
+    lora_moe: LoRAMoEArgs = field(default_factory=LoRAMoEArgs)
+
 
 def cross_entropy(pred, target, **kwargs):
     return F.nll_loss(
@@ -353,6 +362,18 @@ class Attention(nn.Module):
             bias=False,
         )
 
+        self.moe_w_out = LoRAMoE(
+            num_experts=8,
+            in_dim=n_heads * head_dim,
+            out_dim=dim,
+            rank=8,
+        )
+
+        self.router = MoERouter(
+            num_experts=8,
+            dim=n_heads * head_dim
+        )
+
     def forward(
         self,
         x: torch.Tensor,
@@ -412,7 +433,9 @@ class Attention(nn.Module):
                 f"Attention implementation {attn_impl} not supported"
             )
 
-        output = self.wo(output.reshape(output_shape))
+        output_rs = output.reshape(output_shape)
+        routing = self.router(output_rs)
+        output = self.wo(output_rs) + self.moe_w_out(output_rs, routing)
 
         return output
 
@@ -436,6 +459,10 @@ class Attention(nn.Module):
             b=3 * init_std,
         )
 
+
+        self.moe_w_out.reset_parameters(init_std=init_std, factor=factor)
+        self.router.reset_parameters(init_std=init_std, factor=factor)
+
 class FeedForward(nn.Module):
     def __init__(
         self,
@@ -444,6 +471,7 @@ class FeedForward(nn.Module):
         multiple_of: int,
         ffn_dim_multiplier: Optional[float],
         mp_size: int = 1,
+        lora_moe: Optional[LoRAMoEArgs] = None
     ):
         super().__init__()
 
@@ -472,11 +500,40 @@ class FeedForward(nn.Module):
             bias=False,
         )
 
+        self.lora_moe = False
+        if lora_moe is not None and lora_moe.use:
+            self.lora_moe = True
+            self.moe_w1 = LoRAMoE(
+                num_experts=lora_moe.num_experts,
+                in_dim=dim,
+                out_dim=hidden_dim,
+                rank=lora_moe.rank,
+            )
+            self.moe_w3 = LoRAMoE(
+                num_experts=lora_moe.num_experts,
+                in_dim=dim,
+                out_dim=hidden_dim,
+                rank=lora_moe.rank,
+            )
+            self.moe_w2 = LoRAMoE(
+                num_experts=lora_moe.num_experts,
+                in_dim=hidden_dim,
+                out_dim=dim,
+                rank=lora_moe.rank,
+            )
+            self.router = MoERouter(
+                num_experts=lora_moe.num_experts,
+                dim=dim
+            )
+
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # B S D
-        x1 = self.w1(x.view_as(x))
-        x3 = self.w3(x.view_as(x))
-        output = self.w2(F.silu(x1) * x3)
+        routing = self.router(x) if self.lora_moe else None
+        x1 = self.w1(x.view_as(x)) + (self.moe_w1(x, routing) if self.lora_moe else 0)
+        x3 = self.w3(x.view_as(x)) + (self.moe_w3(x, routing) if self.lora_moe else 0)
+        x_up = F.silu(x1) * x3
+        output = self.w2(x_up) + (self.moe_w2(x_up, routing) if self.lora_moe else 0)
         return output
 
     def reset_parameters(self, init_std=None, factor=1.0):
@@ -499,6 +556,11 @@ class FeedForward(nn.Module):
             a=-3 * out_init_std,
             b=3 * out_init_std,
         )
+
+        if self.lora_moe:
+            self.router.reset_parameters(init_std, factor)
+            for moe in (self.moe_w1, self.moe_w2, self.moe_w3):
+                moe.reset_parameters(init_std, factor)
 
 
 class TransformerBlock(nn.Module):
@@ -541,6 +603,7 @@ class TransformerBlock(nn.Module):
             hidden_dim=4 * args.dim,
             multiple_of=args.multiple_of,
             ffn_dim_multiplier=args.ffn_dim_multiplier,
+            lora_moe=args.lora_moe
         )
         self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
@@ -577,7 +640,6 @@ class TransformerBlock(nn.Module):
     def init_weights(self, init_std=None, factor=1.0):
         self.attention.reset_parameters(init_std, factor)
         self.attention_norm.reset_parameters()
-
         self.feed_forward.reset_parameters(init_std, factor)
         self.ffn_norm.reset_parameters()
 
