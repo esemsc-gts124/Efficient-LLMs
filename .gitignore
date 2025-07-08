@@ -8,3 +8,7 @@ logs/*
 checkpoints/*
 tokenizer/*
 data/*
+data_8gpu/*
+.venv/*
+run_jobs.sh
+data.tar.zst
