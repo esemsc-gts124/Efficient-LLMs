@@ -56,7 +56,15 @@ from lingua.metrics import (
 from lingua.optim import OptimArgs, build_optimizer
 from lingua.profiling import ProfilerArgs, maybe_run_profiler
 from lingua.tokenizer import build_tokenizer
-from apps.main.transformer import (
+# from apps.main.transformer import ( # ORIGINAL
+#     LMTransformerArgs,
+#     LMTransformer,
+#     get_num_flop_per_token,
+#     build_fsdp_grouping_plan,
+#     tp_parallelize,
+#     get_no_recompute_ops,
+# )
+from apps.main.rrt import ( # RRT
     LMTransformerArgs,
     LMTransformer,
     get_num_flop_per_token,
