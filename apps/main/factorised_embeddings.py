@@ -20,11 +20,57 @@ from torch.nn.attention.flex_attention import (
 from .args import LMTransformerArgs, ProjectUpLayerArgs
 
 import math
-# George: Factorise the output layer for weight tying also
-class FactorisedTiedOut(nn.Module):
-    def __init__(self, tok_embeddings: nn.Embedding, project: nn.Linear):
+class FactorisedOut(nn.Module):
+    def __init__(self, args: LMTransformerArgs):
         super().__init__()
-        self.proj_down = TiedLinear(project)
+        self.proj_down = nn.Linear(
+            args.dim,
+            args.factorised_vocab.d_factorised,
+            bias=False)
+
+        nn.init.trunc_normal_(
+            self.proj_down.weight,
+            mean=0.0,
+            std=args.dim ** (-0.5),
+            a=-3 * args.dim ** (-0.5),
+            b=3 * args.dim ** (-0.5),
+        )
+
+        self.unembed = nn.Linear(
+            args.dim,
+            args.vocab_size,
+            bias=False,
+        )
+        nn.init.trunc_normal_(
+            self.unembed.weight,
+            mean=0.0,
+            std=args.dim ** (-0.5),
+            a=-3 * args.dim ** (-0.5),
+            b=3 * args.dim ** (-0.5),
+        )
+
+    def forward(self, x: torch.Tensor):
+        intermediate = self.proj_down(x)
+        logits = self.unembed(intermediate)
+        return logits
+class FactorisedTiedOut(nn.Module):
+    def __init__(self, args: LMTransformerArgs, tok_embeddings: nn.Embedding, project: Optional[nn.Linear] = None):
+        super().__init__()
+        if project is not None:
+            self.proj_down = TiedLinear(project)
+        else:
+            self.proj_down = nn.Linear(
+                args.dim,
+                args.factorised_vocab.d_emb,
+                bias=False)
+
+            nn.init.trunc_normal_(
+                self.proj_down.weight,
+                mean=0.0,
+                std=args.dim ** (-0.5),
+                a=-3 * args.dim ** (-0.5),
+                b=3 * args.dim ** (-0.5),
+            )
         self.unembed = TiedLinear(tok_embeddings)
 
     def forward(self, x: torch.Tensor):
@@ -110,6 +156,7 @@ class Attention(nn.Module):
             bias=False,
         )
 
+        self.qk_need = self.kq_head_dim // 2 # to make the RoPE shape correct
     def forward(
         self,
         x: torch.Tensor,
@@ -130,7 +177,9 @@ class Attention(nn.Module):
         xk = xk.view(bsz, seq_len, self.n_kv_heads, self.kq_head_dim)
         xv = xv.view(bsz, seq_len, self.n_kv_heads, self.val_head_dim)
 
-        xq, xk = apply_rotary_emb(xq, xk, 1, freq_cis[0:seq_len])
+        fc = freq_cis[:seq_len]
+        fc = fc[:, :self.qk_need]
+        xq, xk = apply_rotary_emb(xq, xk, 1, fc)
 
         # This condition helps us be easily compatible
         # with inference by adding a pluggable KVCache
@@ -281,16 +330,14 @@ class ProjectLayer(nn.Module):
         self.project_args: ProjectUpLayerArgs = args.project_layers[i]
         self.in_dim = self.project_args.in_dim
 
-        self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
-        self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
 
         self.attn_projs = False
         attn_final_dim = self.in_dim
-        for d in (self.project_args.d_attn_out,
+        for i, d in enumerate((self.project_args.d_attn_out,
             self.project_args.d_attn_val,
-            self.project_args.d_attn_kq):
+            self.project_args.d_attn_kq)):
             if d is not None:
-                attn_final_dim = d
+                attn_final_dim = d if i < 1 else d*args.n_heads
                 self.attn_projs = True
                 self.attn_proj = nn.Linear(self.in_dim, attn_final_dim, bias=False)
                 if self.project_args.attn_proj_rand:
@@ -302,6 +349,7 @@ class ProjectLayer(nn.Module):
             if self.project_args.ffn_proj_rand:
                 self.ffn_proj.weight.requires_grad_(False)
 
+        self.attention_norm = RMSNorm(self.in_dim, eps=args.norm_eps)
         self.attention = Attention(
             dim=args.dim,
             head_dim=self.head_dim,
@@ -310,6 +358,8 @@ class ProjectLayer(nn.Module):
             rope_theta=args.rope_theta,
             proj_args=self.project_args
         )
+
+        self.ffn_norm = RMSNorm(attn_final_dim, eps=args.norm_eps)
         self.feed_forward = FeedForward(
             dim=args.dim,
             hidden_dim=4 * args.dim,

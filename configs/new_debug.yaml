@@ -1,5 +1,5 @@
-dump_dir: /home/jovyan/shared/muchane/lingua-repo/dumps/lr_vocab/baseline_0
-name: Projection_Baseline
+dump_dir: /home/jovyan/shared/muchane/lingua-repo/dumps/fsdp_bug_0
+name: FSDP_Bug
 steps: 10500
 probe_freq: 15000
 seed: 777
@@ -24,21 +24,11 @@ model:
     n_heads: 16
     n_kv_heads: 8
     weight_tying: True
-    factorised_vocab:
-        d_emb: 16
-        factorise: True
-        d_factorised: 32
-        proj_out: True
-    project_layers:
-        - d_attn_kq: 4
-          d_attn_val: 8
-          d_attn_out: 256
-          d_ffn: 512
 data:
     root_dir: /home/jovyan/shared/muchane/fineweb-lingua
     sources:
         fineweb_edu_shuffled: 1.0
-    batch_size: 48
+    batch_size: 64
     prefetch_size: 32
     seq_len: 2048
     n_views: 2

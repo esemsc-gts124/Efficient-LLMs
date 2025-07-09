@@ -102,6 +102,7 @@ class TrainArgs:
     # If set to None, eval is run locally otherwise it launches a new job with the given number of gpus
     async_eval_gpus: Optional[int] = None
     eval: Optional[Any] = None
+    parameter_count: Optional[int] = 0
 
 
 @dataclass
@@ -287,7 +288,7 @@ def train(args: TrainArgs):
         # log model size
 
         logger.info(f"Model size: {model_param_count:,} total parameters")
-
+        args.parameter_count = model_param_count
         gpu_memory_monitor = GPUMemoryMonitor("cuda")
         logger.info(
             f"GPU capacity: {gpu_memory_monitor.device_name} ({gpu_memory_monitor.device_index}) "

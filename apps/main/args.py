@@ -9,6 +9,8 @@ class VocabArgs:
     d_emb: int = 32
     factorise: bool = False
     d_factorised: Optional[int] = None
+    proj_out: Optional[bool] = None # use an untied projector or
+    # have last layer(s) inverse the ProjectUpLayers
 
 
 @dataclass

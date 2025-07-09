@@ -27,6 +27,7 @@ from lingua.transformer import (
 )
 
 from .factorised_embeddings import (
+    FactorisedOut,
     FactorisedTiedOut,
     ProjectLayer,
     calc_in_dim,
@@ -91,15 +92,20 @@ class LMTransformer(BaseTransformer):
         # Configure output layer based on weight tying and embedding type
         if args.weight_tying:
             if self.use_factorised:
-                self.output = FactorisedTiedOut(self.tok_embeddings, self.tok_embeddings_up)
+                self.output = FactorisedTiedOut(args,
+                    self.tok_embeddings,
+                    self.tok_embeddings_up if not args.factorised_vocab.proj_out else None)
             else:
                 self.output = TiedLinear(self.tok_embeddings)
         else:
-            self.output = nn.Linear(
-                args.dim,
-                args.vocab_size,
-                bias=False,
-            )
+            if self.use_factorised:
+                self.output = FactorisedOut(args.dim, args.factorised_vocab)
+            else:
+                self.output = nn.Linear(
+                    args.dim,
+                    args.vocab_size,
+                    bias=False,
+                )
 
         if args.project_layers is None:
             assert args.dim == args.factorised_vocab.d_factorised, "Dimension mismatch between model dimension and factorised vocabulary dimension"
@@ -192,9 +198,9 @@ def build_fsdp_grouping_plan(model_args: LMTransformerArgs):
     group_plan: Tuple[int, bool] = []
 
     # Grouping and output seperately
-    if model_args.rank > 0:
-        group_plan.append(("tok_embeddings1", False))  # Factorised
-        group_plan.append(("tok_embeddings2", False))  # Factorised
+    if model_args.factorised_vocab.factorise:
+        group_plan.append(("tok_embeddings", False))  # Factorised
+        group_plan.append(("tok_embeddings_up", False))  # Factorised
     else:
         group_plan.append(("tok_embeddings", False)) # Original lingua embeddings
 
