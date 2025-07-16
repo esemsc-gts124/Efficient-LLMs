@@ -1,5 +1,5 @@
-dump_dir: /home/jovyan/shared/muchane/lingua-repo/dumps/lr_vocab/baseline_1
-name: Projection_Baseline
+dump_dir: /home/jovyan/shared/muchane/lingua-repo/dumps/lr_vocab/proj_exps/just_out_0
+name: Just_Out
 steps: 10500
 probe_freq: null
 seed: 777
@@ -18,22 +18,23 @@ distributed:
     selective_activation_checkpointing: false
     tp_size: 1
 model:
-    dim: 512
-    ffn_dim_multiplier: 1.0
-    n_layers: 8
+    dim: 384
+    ffn_dim_multiplier: 0.75
+    n_layers: 20
     n_heads: 16
     n_kv_heads: 8
     weight_tying: True
     factorised_vocab:
         d_emb: 16
-        factorise: True
-        d_factorised: 32
+        factorise: False
+        d_factorised: 384
         proj_out: True
-    project_layers:
-        - d_attn_kq: 4
-          d_attn_val: 8
-          d_attn_out: 256
-          d_ffn: 512
+    project_up_layers:
+        - d_attn_kq: null
+          d_attn_val: null
+          d_attn_out: 384
+          d_ffn: null
+          attn_proj_rand: true
 data:
     root_dir: /home/jovyan/shared/muchane/fineweb-lingua
     sources:

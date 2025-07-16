@@ -1,7 +1,7 @@
-dump_dir: /home/jovyan/shared/muchane/lingua-repo/dumps/lr_vocab/baseline_0
-name: Projection_Baseline
+dump_dir: /home/jovyan/shared/muchane/lingua-repo/dumps/lr_vocab/proj_exps/just_kq_0
+name: Just_KQ
 steps: 10500
-probe_freq: 15000
+probe_freq: null
 seed: 777
 optim:
     lr: 3e-4
@@ -18,34 +18,35 @@ distributed:
     selective_activation_checkpointing: false
     tp_size: 1
 model:
-    dim: 512
-    ffn_dim_multiplier: 1.125
-    n_layers: 12
+    dim: 384
+    ffn_dim_multiplier: 0.75
+    n_layers: 20
     n_heads: 16
     n_kv_heads: 8
     weight_tying: True
     factorised_vocab:
         d_emb: 16
-        factorise: True
-        d_factorised: 32
+        factorise: False
+        d_factorised: 384
         proj_out: True
     project_up_layers:
-        - d_attn_kq: 4
-          d_attn_val: 8
-          d_attn_out: 256
-          d_ffn: 512
+        - d_attn_kq: 24
+          d_attn_val: null
+          d_attn_out: null
+          d_ffn: null
 data:
     root_dir: /home/jovyan/shared/muchane/fineweb-lingua
     sources:
         fineweb_edu_shuffled: 1.0
-    batch_size: 48
+    batch_size: 32
     prefetch_size: 32
     seq_len: 2048
     n_views: 2
     load_async: true
     tokenizer:
-        name: sp
-        path: /home/jovyan/shared/muchane/lingua-repo/Efficient-LLMs/tokenizer/llama2/tokenizer.model
+        name: tiktoken
+        path: /home/jovyan/shared/muchane/lingua-repo/old/llama3-tokenizer/original/tokenizer.model
+
 profiling:
     run: true
 checkpoint:

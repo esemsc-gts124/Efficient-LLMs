@@ -299,10 +299,19 @@ class TiedLinear(nn.Module):
             raise AttributeError(
                 "Provided module does not have attribute 'weight'. Please check your tied_module."
             )
-
     def __call__(self, x: torch.Tensor) -> torch.Tensor:
         return F.linear(x, self.tied_module.weight)
 
+class TransposedTiedLinear(nn.Module):
+    def __init__(self, tied_module: nn.Module) -> None:
+        super().__init__()
+        self.tied_module = tied_module
+        if not hasattr(tied_module, "weight"):
+            raise AttributeError(
+                "Provided module does not have attribute 'weight'. Please check your tied_module."
+            )
+    def __call__(self, x: torch.Tensor) -> torch.Tensor:
+        return F.linear(x, self.tied_module.weight.t())
 class Attention(nn.Module):
     def __init__(
         self,

@@ -86,7 +86,6 @@ class LMTransformer(BaseTransformer):
         else:
             self.use_factorised = False
 
-        self.norm = RMSNorm(args.dim, eps=args.norm_eps)
 
 
         # Configure output layer based on weight tying and embedding type
@@ -96,10 +95,13 @@ class LMTransformer(BaseTransformer):
                     self.tok_embeddings,
                     self.tok_embeddings_up if not args.factorised_vocab.proj_out else None)
             else:
-                self.output = TiedLinear(self.tok_embeddings)
+                if args.factorised_vocab.proj_out:
+                    self.output = FactorisedTiedOut(args, self.tok_embeddings)
+                else:
+                    self.output = TiedLinear(self.tok_embeddings)
         else:
             if self.use_factorised:
-                self.output = FactorisedOut(args.dim, args.factorised_vocab)
+                self.output = FactorisedOut(args)
             else:
                 self.output = nn.Linear(
                     args.dim,
@@ -107,15 +109,32 @@ class LMTransformer(BaseTransformer):
                     bias=False,
                 )
 
-        if args.project_layers is None:
+        if args.project_up_layers is None:
             assert args.dim == args.factorised_vocab.d_factorised, "Dimension mismatch between model dimension and factorised vocabulary dimension"
         self.layers = nn.ModuleList()
         for i in range(args.n_layers):
-            if args.project_layers is not None and i < len(args.project_layers):
-                args.project_layers[i].in_dim = calc_in_dim(args, i)
-                self.layers.append(ProjectLayer(args, i))
+            if args.project_up_layers is not None and i < len(args.project_up_layers):
+                args.project_up_layers[i].in_dim = calc_in_dim(args, i)
+                self.layers.append(ProjectLayer(args, i, "up"))
+            elif args.project_down_layers is not None and i >= (args.n_layers - len(args.project_down_layers)):
+                k = args.n_layers - len(args.project_down_layers)
+                args.project_down_layers[i-k].in_dim = calc_in_dim(args, i)
+                self.layers.append(ProjectLayer(args, i, "down"))
             else:
                 self.layers.append(TransformerBlock(args))
+
+        if isinstance(self.layers[-1], ProjectLayer):
+            assert args.project_down_layers is not None
+            for k, d in enumerate((args.project_down_layers[-1].d_ffn,
+                args.project_down_layers[-1].d_attn_out,
+                args.project_down_layers[-1].d_attn_val,
+                args.project_down_layers[-1].d_attn_kq)):
+                    if d is not None:
+                        out_dim = d if k < 2 else d*args.n_heads
+                        self.norm = RMSNorm(out_dim, eps=args.norm_eps)
+                        break
+        else:
+            self.norm = RMSNorm(args.dim, eps=args.norm_eps)
 
     def forward(
         self,

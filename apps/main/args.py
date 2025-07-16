@@ -14,7 +14,7 @@ class VocabArgs:
 
 
 @dataclass
-class ProjectUpLayerArgs:
+class ProjectLayerArgs:
     d_attn_val: Optional[int] = None
     d_attn_kq: Optional[int] = None
     d_attn_out: Optional[int] = None
@@ -32,4 +32,5 @@ class LMTransformerArgs(BaseTransformerArgs):
     weight_tying: bool = False
     sliding_window: Optional[int] = None
     factorised_vocab: VocabArgs = field(default_factory=VocabArgs)
-    project_layers: Optional[List[ProjectUpLayerArgs]] = None
+    project_up_layers: Optional[List[ProjectLayerArgs]] = None
+    project_down_layers: Optional[List[ProjectLayerArgs]] = None
