@@ -361,7 +361,7 @@ class Attention(nn.Module):
             dim,
             bias=False,
         )
-
+    """
         self.moe_w_out = LoRAMoE(
             num_experts=8,
             in_dim=n_heads * head_dim,
@@ -373,7 +373,7 @@ class Attention(nn.Module):
             num_experts=8,
             dim=n_heads * head_dim
         )
-
+        """
     def forward(
         self,
         x: torch.Tensor,
@@ -434,8 +434,8 @@ class Attention(nn.Module):
             )
 
         output_rs = output.reshape(output_shape)
-        routing = self.router(output_rs)
-        output = self.wo(output_rs) + self.moe_w_out(output_rs, routing)
+        #routing = self.router(output_rs)
+        output = self.wo(output_rs)# + self.moe_w_out(output_rs, routing)
 
         return output
 
@@ -460,8 +460,8 @@ class Attention(nn.Module):
         )
 
 
-        self.moe_w_out.reset_parameters(init_std=init_std, factor=factor)
-        self.router.reset_parameters(init_std=init_std, factor=factor)
+        #self.moe_w_out.reset_parameters(init_std=init_std, factor=factor)
+        #self.router.reset_parameters(init_std=init_std, factor=factor)
 
 class FeedForward(nn.Module):
     def __init__(
@@ -503,6 +503,7 @@ class FeedForward(nn.Module):
         self.lora_moe = False
         if lora_moe is not None and lora_moe.use:
             self.lora_moe = True
+            """
             self.moe_w1 = LoRAMoE(
                 num_experts=lora_moe.num_experts,
                 in_dim=dim,
@@ -515,9 +516,10 @@ class FeedForward(nn.Module):
                 out_dim=hidden_dim,
                 rank=lora_moe.rank,
             )
+            """
             self.moe_w2 = LoRAMoE(
                 num_experts=lora_moe.num_experts,
-                in_dim=hidden_dim,
+                in_dim=dim,
                 out_dim=dim,
                 rank=lora_moe.rank,
             )
@@ -527,13 +529,18 @@ class FeedForward(nn.Module):
             )
 
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, log: bool) -> torch.Tensor:
         # B S D
-        routing = self.router(x) if self.lora_moe else None
-        x1 = self.w1(x.view_as(x)) + (self.moe_w1(x, routing) if self.lora_moe else 0)
-        x3 = self.w3(x.view_as(x)) + (self.moe_w3(x, routing) if self.lora_moe else 0)
+        if self.lora_moe:
+            routing = self.router(x)
+            if log:
+                self.routing = routing
+
+
+        x1 = self.w1(x.view_as(x))# + (self.moe_w1(x, routing) if self.lora_moe else 0)
+        x3 = self.w3(x.view_as(x))# + (self.moe_w3(x, routing) if self.lora_moe else 0)
         x_up = F.silu(x1) * x3
-        output = self.w2(x_up) + (self.moe_w2(x_up, routing) if self.lora_moe else 0)
+        output = self.w2(x_up) + (self.moe_w2(x, routing) if self.lora_moe else 0)
         return output
 
     def reset_parameters(self, init_std=None, factor=1.0):
@@ -559,7 +566,7 @@ class FeedForward(nn.Module):
 
         if self.lora_moe:
             self.router.reset_parameters(init_std, factor)
-            for moe in (self.moe_w1, self.moe_w2, self.moe_w3):
+            for moe in (self.moe_w2,):#(self.moe_w1, self.moe_w2, self.moe_w3):
                 moe.reset_parameters(init_std, factor)
 
 
@@ -615,6 +622,7 @@ class TransformerBlock(nn.Module):
         tok_idx: Optional[torch.Tensor] = None,
         mask: Optional[Union[BlockMask, AttentionBias, str]] = None,
         attn_impl: str = "sdpa",
+        log: bool = False
     ) -> torch.Tensor:
         if self.freeze_attn:
             with torch.no_grad():
@@ -634,7 +642,7 @@ class TransformerBlock(nn.Module):
                 attn_impl=attn_impl,
             )
         h = x + attn_out
-        out = h + self.feed_forward(self.ffn_norm(h))
+        out = h + self.feed_forward(self.ffn_norm(h), log=log)
         return out
 
     def init_weights(self, init_std=None, factor=1.0):
@@ -667,12 +675,15 @@ class BaseTransformer(nn.Module):
         tok_idx: Optional[torch.Tensor] = None,
         mask: Optional[Union[BlockMask, AttentionBias, str]] = None,
         attn_impl: str = "sdpa",
+        logging_freq: Tuple[int, int] = (1000, 1000)
     ):
 
         freq_cis = self.rope_embeddings(seqlen=self.max_seqlen, tok_idx=tok_idx)
-
+        log = False
+        if logging_freq[0] % logging_freq[1] == 0:
+            log = True
         for i, layer in enumerate(self.layers):
-            h = layer(h, freq_cis, tok_idx=tok_idx, mask=mask, attn_impl=attn_impl)
+            h = layer(h, freq_cis, tok_idx=tok_idx, mask=mask, attn_impl=attn_impl, log=log)
         return h
 
     def reset_parameters(self):

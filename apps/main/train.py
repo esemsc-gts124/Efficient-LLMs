@@ -415,7 +415,7 @@ def train(args: TrainArgs):
                     next(model.parameters()).grad is None
                 ), "Probe model shouldn't have grads at this point"
 
-            loss = model(input_ids, labels)
+            loss = model(input_ids, labels, logging_freq=(train_state.step, args.logging.freq))
 
             if args.grad_acc_steps > 1:
                 model.set_requires_gradient_sync(train_state.acc_step == 0)
@@ -463,6 +463,16 @@ def train(args: TrainArgs):
                 acc_step=None if args.logging.acc_freq else 0,
                 acc_freq=args.logging.acc_freq,
             ):
+                if (train_state.step % args.logging.freq == 0):
+
+                    to_save = torch.empty(
+                        (args.model.n_layers,args.data.batch_size, args.data.seq_len, args.model.lora_moe.num_experts),
+                        dtype=torch.bfloat16
+                    )
+
+                    for i, layer in enumerate(model.layers):
+                        to_save[i] = layer.feed_forward.routing
+                    torch.save(to_save.detach().cpu(), f"{args.dump_dir}/routing_{train_state.step}.pt")
                 time_delta = timer() - time_last_log
                 wps = nwords_since_last_log / (time_delta * args.distributed.tp_size)
 

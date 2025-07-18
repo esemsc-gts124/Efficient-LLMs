@@ -99,6 +99,7 @@ class LMTransformer(BaseTransformer):
         tok_idx: Optional[torch.Tensor] = None,
         mask: Optional[Union[BlockMask, AttentionBias, torch.Tensor, str]] = None,
         attn_impl: str = "sdpa",
+        logging_freq: Tuple[int, int] = (1000, 1000)
     ):
         bsz, seqlen = token_values.shape
 
@@ -110,7 +111,7 @@ class LMTransformer(BaseTransformer):
             else create_causal_mask(seqlen, attn_impl, self.sliding_window)
         )
 
-        h = super().forward(h, tok_idx=tok_idx, mask=mask, attn_impl=attn_impl)
+        h = super().forward(h, tok_idx=tok_idx, mask=mask, attn_impl=attn_impl, logging_freq=logging_freq)
 
         logits = self.output(self.norm(h))
         if target is not None:
