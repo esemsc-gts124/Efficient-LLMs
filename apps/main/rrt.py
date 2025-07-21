@@ -107,9 +107,9 @@ class FactorisedTiedLinear(nn.Module):
 
     def forward(self, x: torch.Tensor):
         intermediate = torch.matmul(x, self.tok_embeddings2.weight)
-        logits = torch.matmul(intermediate, self.tok_embeddings1.weight.t())
+        logits = self.tok_embeddings1(intermediate)#torch.matmul(intermediate, self.tok_embeddings1.weight.t())
         return logits
-    
+
 
 
 
@@ -121,11 +121,12 @@ class SharedLinearWithLoRA(nn.Module):
         self.lora_rank = lora_rank
         if lora_rank > 0:
         # Layer-specific LoRA parameters
-            self.lora_A = nn.Parameter(torch.zeros(out_features, lora_rank))
-            self.lora_B = nn.Parameter(torch.zeros(lora_rank, in_features))
+            self.lora_B = nn.Linear(lora_rank, out_features, bias=False)
+            self.lora_A = nn.Linear(in_features, lora_rank, bias=False)
+
             # Initialise LoRA parameters
-            nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))
-            nn.init.zeros_(self.lora_B)
+            nn.init.kaiming_uniform_(self.lora_A.weight, a=math.sqrt(5))
+            nn.init.zeros_(self.lora_B.weight)
         self.in_features = in_features
         self.out_features = out_features
 
@@ -133,14 +134,18 @@ class SharedLinearWithLoRA(nn.Module):
 
     def forward(self, x):
         # Base computation w shared weights
-        base_output = torch.matmul(x, self.shared_weight.t())
-        # LoRA adjustment 
+        base_output = self.shared_weight(x)#torch.matmul(x, self.shared_weight.weight.t())
+        # LoRA adjustment
         if self.lora_rank > 0:
-            lora_output = torch.matmul(x, self.lora_B.t()) # x @ B.T
-            lora_output = torch.matmul(lora_output, self.lora_A.t()) # (x @ B.T) @ A.T
+            lora_output = self.lora_A(x)#torch.matmul(x, self.lora_B.weight.t()) # x @ B.T
+            lora_output = self.lora_B(lora_output)#torch.matmul(lora_output, self.lora_A.weight.t()) # (x @ B.T) @ A.T
             return base_output + lora_output
         return base_output
-    
+    def reset_parameters(self):
+        nn.init.kaiming_uniform_(self.lora_A.weight, a=math.sqrt(5))
+        nn.init.kaiming_uniform_(self.lora_B.weight, a=math.sqrt(5))
+
+
 
 # RRT: class for attention using SharedLinearWithLoRA for linear transformations
 class AttentionWithSharedWeights(nn.Module):
@@ -224,6 +229,11 @@ class AttentionWithSharedWeights(nn.Module):
         # Final projection
         output = self.wo(output.view(bsz, seq_len, -1))
         return output
+    def reset_parameters(self):
+        self.wk.reset_parameters()
+        self.wv.reset_parameters()
+        self.wq.reset_parameters()
+        self.wo.reset_parameters()
 
 
 # RRT: FFN cusing shared weights with LoRA
@@ -248,6 +258,10 @@ class FeedForwardWithSharedWeights(nn.Module):
         output = self.w2(F.silu(x1) * x3)
         return output
 
+    def reset_parameters(self):
+        self.w1.reset_parameters()
+        self.w2.reset_parameters()
+        self.w3.reset_parameters()
 
 # RRT: transformer block class utilising shared weights
 class TransformerBlockWithSharedWeights(nn.Module):
@@ -287,7 +301,7 @@ class TransformerBlockWithSharedWeights(nn.Module):
         self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
 
-    
+
     def forward(self, x, freq_cis, tok_idx, mask, attn_impl):
         h = x + self.attention(
             self.attention_norm(x),
@@ -298,9 +312,11 @@ class TransformerBlockWithSharedWeights(nn.Module):
         )
         out = h + self.feed_forward(self.ffn_norm(h))
         return out
-    
+
     # If any issues: get rid of this and redo weight initialisation for individual components
     def init_weights(self, init_std=None, factor=1.0):
+        self.attention.reset_parameters()
+        self.feed_forward.reset_parameters()
         self.attention_norm.reset_parameters()
         self.ffn_norm.reset_parameters()
 
@@ -363,21 +379,21 @@ class LMTransformer(BaseTransformer):
         for group in args.layer_groups:
             group_key = tuple(group)
             attention_weights = {
-                "wq": nn.Parameter(torch.zeros(args.n_heads * args.head_dim, args.dim)),
-                "wk": nn.Parameter(torch.zeros(args.n_kv_heads * args.head_dim, args.dim)),
-                "wv": nn.Parameter(torch.zeros(args.n_kv_heads * args.head_dim, args.dim)),
-                "wo": nn.Parameter(torch.zeros(args.dim, args.n_heads * args.head_dim))
+                "wq": nn.Linear(args.dim, args.n_heads * args.head_dim, bias=False),
+                "wk": nn.Linear(args.dim, args.n_kv_heads * args.head_dim, bias=False),
+                "wv": nn.Linear(args.dim, args.n_kv_heads * args.head_dim, bias=False),
+                "wo": nn.Linear(args.n_heads * args.head_dim, args.dim, bias=False)
             }
             ffn_weights = {
-                "w1": nn.Parameter(torch.zeros(args.ffn_dim, args.dim)),
-                "w2": nn.Parameter(torch.zeros(args.dim, args.ffn_dim)),
-                "w3": nn.Parameter(torch.zeros(args.ffn_dim, args.dim))
+                "w1": nn.Linear(args.dim, args.ffn_dim, bias=False),
+                "w2": nn.Linear(args.ffn_dim, args.dim, bias=False),
+                "w3": nn.Linear(args.dim, args.ffn_dim, bias=False)
             }
             # Initialize weights
             for w in attention_weights.values():
-                nn.init.trunc_normal_(w, mean=0.0, std=init_std, a=-3*init_std, b=3*init_std)
+                nn.init.trunc_normal_(w.weight, mean=0.0, std=init_std, a=-3*init_std, b=3*init_std)
             for w in ffn_weights.values():
-                nn.init.trunc_normal_(w, mean=0.0, std=init_std, a=-3*init_std, b=3*init_std)
+                nn.init.trunc_normal_(w.weight, mean=0.0, std=init_std, a=-3*init_std, b=3*init_std)
             self.weight_sets[group_key] = {"attention": attention_weights, "ffn": ffn_weights}
 
         # Create layers with appropriate weight sets and LoRA ranks
@@ -403,7 +419,7 @@ class LMTransformer(BaseTransformer):
         #     "wv": nn.Parameter(torch.zeros(args.n_kv_heads * args.head_dim, args.dim)),
         #     "wo": nn.Parameter(torch.zeros(args.dim, args.n_heads * args.head_dim))
         # }
-        
+
         # # Define shared weights for feed-forward
         # self.shared_ffn_weights = {
         #     "w1": nn.Parameter(torch.zeros(args.ffn_dim, args.dim)),
@@ -466,6 +482,10 @@ class LMTransformer(BaseTransformer):
         super().reset_parameters()
         init_std = init_std or (self.dim ** (-0.5))
         self.norm.reset_parameters()
+        for x in self.weight_sets.values():
+            for y in x.values():
+                for z in y.values():
+                    nn.init.trunc_normal_(z.weight, mean=0.0, std=init_std, a=-3*init_std, b=3*init_std)
 
         # Initialise embedding weights based on embedding type
         if self.use_factorised:
@@ -513,14 +533,14 @@ def build_fsdp_grouping_plan(model_args: LMTransformerArgs):
 
     # Grouping and output seperately
     if model_args.rank > 0:
-        group_plan.append(("tok_embeddings1", False))  # Factorised 
-        group_plan.append(("tok_embeddings2", False))  # Factorised 
+        group_plan.append(("tok_embeddings1", False))  # Factorised
+        group_plan.append(("tok_embeddings2", False))  # Factorised
     else:
         group_plan.append(("tok_embeddings", False)) # Original lingua embeddings
 
     # Grouping by layers
     for i in range(model_args.n_layers):
-        group_plan.append((f"layers.{i}", False)) 
+        group_plan.append((f"layers.{i}", False))
 
     group_plan.append(("output", True))
 

@@ -74,8 +74,58 @@ from apps.main.rrt import ( # RRT
 )
 from lingua.probe import AutoProbeD
 from lingua.stool import StoolArgs, launch_job
-
+import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 import wandb
+
+
+def plot_grad_flow(named_parameters, save_path="gradient_flow.png", dpi=200):
+    '''Plots the gradients flowing through different layers in the net during training.
+    Usage: after loss.backward() do: plot_grad_flow(model.named_parameters())'''
+    ave_grads = []
+    max_grads = []
+    layers    = []
+    for name, p in named_parameters:
+        if p.requires_grad and "bias" not in name:
+            layers.append(name)
+            ave_grads.append(p.grad.abs().mean().item())
+            max_grads.append(p.grad.abs().max().item())
+    n = len(layers)
+
+    # dynamic figure size: 0.4" per layer, minimum width 12", height 6"
+    fig_w = max(12, n * 0.4)
+    fig_h = 6
+    plt.figure(figsize=(fig_w, fig_h), dpi=dpi)
+
+    # bars
+    x = np.arange(n)
+    plt.bar(x, max_grads, alpha=0.1, lw=1, color="c")
+    plt.bar(x, ave_grads, alpha=0.1, lw=1, color="b")
+    plt.hlines(0, 0, n-1, lw=2, color="k")
+
+    # labels
+    plt.xticks(x, layers, rotation=90, fontsize=10)
+    plt.xlim(-0.5, n-0.5)
+    plt.ylim(min(-0.001, min(ave_grads) * 1.1), max(ave_grads) * 1.1)
+    plt.xlabel("Layers")
+    plt.ylabel("Average gradient")
+    plt.title("Gradient flow")
+    plt.grid(True)
+    plt.legend(
+        [Line2D([0], [0], color="c", lw=4),
+         Line2D([0], [0], color="b", lw=4),
+         Line2D([0], [0], color="k", lw=4)],
+        ['max‐gradient', 'mean‐gradient', 'zero‐gradient'],
+        loc="upper right"
+    )
+
+    # make sure long names survive
+    plt.subplots_adjust(bottom=0.35, top=0.9)
+    plt.tight_layout()
+
+    # save hi‑res
+    plt.savefig(save_path, bbox_inches="tight", dpi=dpi)
+    plt.close()
 
 logger = logging.getLogger()
 
@@ -443,7 +493,6 @@ def train(args: TrainArgs):
                 grad_norm = (
                     grad_norm.full_tensor() if isinstance(grad_norm, DTensor) else grad_norm
                 ).item()
-
                 optimizer.step()
                 scheduler.step()
                 optimizer.zero_grad()

@@ -422,6 +422,7 @@ def parallelize_model(
             assert (
                 device_mesh["dp_shard"].size() == 1
             ), "dp_shard must be 1 for no_shard fsdp_type"
+            fsdp_grouping_plan = []
 
         fsdp_config = dict(
             mp_policy=(
