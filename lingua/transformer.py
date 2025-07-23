@@ -1,7 +1,8 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
+import re
 from typing import Optional, Union, Tuple, List
 
 import torch
@@ -19,7 +20,7 @@ from lingua import probe
 
 flex_attention_comp = torch.compile(flex_attention)
 
-from .lora_moe import LoRAMoE, MoERouter
+from .lora_moe import LoRAMoE, MoERouter, SparseLoRAMoE
 
 class InitStdFactor(Enum):
     DISABLED = "disabled"  # Init std is divided by 1.0
@@ -33,6 +34,8 @@ class LoRAMoEArgs:
     use: bool = False
     num_experts: int = 8
     rank: int = 8
+    k: int = 4
+    bias_update: float = 0.001
 @dataclass
 class BaseTransformerArgs:
     dim: int = 512
@@ -471,12 +474,13 @@ class FeedForward(nn.Module):
         multiple_of: int,
         ffn_dim_multiplier: Optional[float],
         mp_size: int = 1,
-        lora_moe: Optional[LoRAMoEArgs] = None
+        lora_moe: LoRAMoEArgs = LoRAMoEArgs()
     ):
         super().__init__()
 
         hidden_dim = int(2 * hidden_dim / 3)
         if ffn_dim_multiplier is not None:
+            ffn_dim_multiplier = 0.5 if lora_moe.use else ffn_dim_multiplier
             hidden_dim = int(ffn_dim_multiplier * hidden_dim)
         hidden_dim = multiple_of * ((hidden_dim + multiple_of - 1) // multiple_of)
         assert hidden_dim % mp_size == 0
@@ -503,6 +507,8 @@ class FeedForward(nn.Module):
         self.lora_moe = False
         if lora_moe is not None and lora_moe.use:
             self.lora_moe = True
+        if self.lora_moe and lora_moe:
+            self.k = lora_moe.k
             """
             self.moe_w1 = LoRAMoE(
                 num_experts=lora_moe.num_experts,
@@ -517,7 +523,7 @@ class FeedForward(nn.Module):
                 rank=lora_moe.rank,
             )
             """
-            self.moe_w2 = LoRAMoE(
+            self.moe_w2 = SparseLoRAMoE(
                 num_experts=lora_moe.num_experts,
                 in_dim=dim,
                 out_dim=dim,
@@ -528,20 +534,32 @@ class FeedForward(nn.Module):
                 dim=dim
             )
 
+            self.router_bias = torch.zeros(lora_moe.num_experts)
+            self.router_bias.requires_grad = False
+
+            self.routing_tracker = torch.zeros(lora_moe.num_experts, dtype=torch.int64)
+            self.routing_tracker.requires_grad = False
+            self.bias_update = lora_moe.bias_update
 
     def forward(self, x: torch.Tensor, log: bool) -> torch.Tensor:
         # B S D
         if self.lora_moe:
             routing = self.router(x)
-            if log:
-                self.routing = routing
+            routing = torch.topk(routing + self.router_bias, k=self.k)
+            self.routing_tracker = torch.bincount(routing.indices.flatten(),
+                minlength=self.router.num_experts)
+            self.update_router_bias()
 
 
         x1 = self.w1(x.view_as(x))# + (self.moe_w1(x, routing) if self.lora_moe else 0)
         x3 = self.w3(x.view_as(x))# + (self.moe_w3(x, routing) if self.lora_moe else 0)
         x_up = F.silu(x1) * x3
-        output = self.w2(x_up) + (self.moe_w2(x, routing) if self.lora_moe else 0)
+        output = self.w2(x_up) + (self.moe_w2(x, routing.values.to(torch.bfloat16), routing.indices) if self.lora_moe else 0)
         return output
+
+    def update_router_bias(self):
+        self.router_bias += self.bias_update * torch.sign(
+            (torch.mean(self.routing_tracker, dtype=torch.bfloat16) - self.routing_tracker))
 
     def reset_parameters(self, init_std=None, factor=1.0):
         in_init_std = init_std or (self.dim ** (-0.5))
@@ -566,6 +584,10 @@ class FeedForward(nn.Module):
 
         if self.lora_moe:
             self.router.reset_parameters(init_std, factor)
+            self.router_bias = torch.zeros_like(self.router_bias, device="cuda").cuda()
+            self.routing_tracker = torch.zeros_like(self.routing_tracker, device="cuda").cuda()
+            self.routing_tracker.requires_grad = False
+            self.router_bias.requires_grad = False
             for moe in (self.moe_w2,):#(self.moe_w1, self.moe_w2, self.moe_w3):
                 moe.reset_parameters(init_std, factor)
 
@@ -666,8 +688,13 @@ class BaseTransformer(nn.Module):
         )
 
         self.layers = nn.ModuleList()
-        for _ in range(args.n_layers):
-            self.layers.append(TransformerBlock(args))
+        for i in range(args.n_layers):
+            if i in (0,):
+                lora_moe = LoRAMoEArgs(use=False)
+                no_moe_args = replace(args, lora_moe=lora_moe)
+                self.layers.append(TransformerBlock(no_moe_args))
+            else:
+                self.layers.append(TransformerBlock(args))
 
     def forward(
         self,

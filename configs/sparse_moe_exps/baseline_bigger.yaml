@@ -1,5 +1,5 @@
-dump_dir: /home/jovyan/shared/muchane/lingua-repo/dumps/lora_moe/all_ffn_0
-name: LoRA_MoE_Baseline_allffn
+dump_dir: /home/jovyan/shared/muchane/lingua-repo/dumps/lora_moe/moe_baseline_1
+name: Sparse_MoE_Baseline_Bigger
 steps: 10500
 probe_freq: 15000
 seed: 777
@@ -20,11 +20,11 @@ distributed:
 model:
     dim: 512
     ffn_dim_multiplier: 1.125
-    n_layers: 12
+    n_layers: 10
     n_heads: 16
     n_kv_heads: 8
     lora_moe:
-        use: true
+        use: false
         num_experts: 8
         rank: 8
     weight_tying: true

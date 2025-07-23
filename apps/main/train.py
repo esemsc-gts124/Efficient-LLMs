@@ -465,13 +465,14 @@ def train(args: TrainArgs):
             ):
                 if (train_state.step % args.logging.freq == 0):
 
-                    to_save = torch.empty(
-                        (args.model.n_layers,args.data.batch_size, args.data.seq_len, args.model.lora_moe.num_experts),
-                        dtype=torch.bfloat16
+                    to_save = torch.zeros(
+                        (args.model.n_layers,args.model.lora_moe.num_experts),
+                        dtype=torch.long
                     )
 
                     for i, layer in enumerate(model.layers):
-                        to_save[i] = layer.feed_forward.routing
+                        if hasattr(layer.feed_forward, 'routing_tracker'):
+                            to_save[i] = layer.feed_forward.routing_tracker
                     torch.save(to_save.detach().cpu(), f"{args.dump_dir}/routing_{train_state.step}.pt")
                 time_delta = timer() - time_last_log
                 wps = nwords_since_last_log / (time_delta * args.distributed.tp_size)

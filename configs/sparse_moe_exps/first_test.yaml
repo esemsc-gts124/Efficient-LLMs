@@ -1,5 +1,5 @@
-dump_dir: /home/jovyan/shared/muchane/lingua-repo/dumps/lora_moe/all_ffn_0
-name: LoRA_MoE_Baseline_allffn
+dump_dir: /home/jovyan/shared/muchane/lingua-repo/dumps/lora_moe/moe_basic_activation_1
+name: Sparse_MoE_Basic_activation_zero
 steps: 10500
 probe_freq: 15000
 seed: 777
@@ -26,7 +26,7 @@ model:
     lora_moe:
         use: true
         num_experts: 8
-        rank: 8
+        rank: 4
     weight_tying: true
 
 data:
