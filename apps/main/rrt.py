@@ -107,7 +107,11 @@ class FactorisedTiedLinear(nn.Module):
 
     def forward(self, x: torch.Tensor):
         intermediate = torch.matmul(x, self.tok_embeddings2.weight)
-        logits = self.tok_embeddings1(intermediate)#torch.matmul(intermediate, self.tok_embeddings1.weight.t())
+        # intermediate = F.linear(x, self.tok_embeddings2.weight.t()) # change from matmul to linear
+
+        # logits = self.tok_embeddings1(intermediate)#torch.matmul(intermediate, self.tok_embeddings1.weight.t())
+        # logits = F.linear(intermediate, self.tok_embeddings1.weight) # change from matmul to linear
+        logits = torch.matmul(intermediate, self.tok_embeddings1.weight.t())
         return logits
 
 
@@ -142,8 +146,9 @@ class SharedLinearWithLoRA(nn.Module):
             return base_output + lora_output
         return base_output
     def reset_parameters(self):
-        nn.init.kaiming_uniform_(self.lora_A.weight, a=math.sqrt(5))
-        nn.init.kaiming_uniform_(self.lora_B.weight, a=math.sqrt(5))
+        if self.lora_rank > 0:
+            nn.init.kaiming_uniform_(self.lora_A.weight, a=math.sqrt(5))
+            nn.init.kaiming_uniform_(self.lora_B.weight, a=math.sqrt(5))
 
 
 
@@ -343,7 +348,7 @@ class LMTransformer(BaseTransformer):
         if args.rank > 0:
             self.use_factorised = True
             self.tok_embeddings1 = torch.nn.Embedding(args.vocab_size, args.rank)
-            self.tok_embeddings2 = torch.nn.Linear(args.rank, args.dim) # UNCOMMENT WHEN DONE W EXPERIMENT
+            self.tok_embeddings2 = torch.nn.Linear(args.rank, args.dim, bias=False) # UNCOMMENT WHEN DONE W EXPERIMENT
         else:
             self.use_factorised = False
             self.tok_embeddings = torch.nn.Embedding(args.vocab_size, args.dim) # UNCOMMENT WHEN DONE W EXPERIMENT
