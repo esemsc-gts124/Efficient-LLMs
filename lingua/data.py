@@ -20,7 +20,7 @@ logger = logging.getLogger()
 
 """
 This file contains all code necessary for text data loading from preshuffled jsonl chunks.
-For example if given the following files with a world size of 8 
+For example if given the following files with a world size of 8
 
 /path/to/arxiv:
 arxiv.chunk.00.jsonl (Contains many lines of {"text":...} or {"content":...})
@@ -54,7 +54,7 @@ Each iterator returns a tuple (output, state) where state contains all the info 
 
 build_mixed_token_packing_dataloader creates the states and return an iterator that does everything above
 
-build_seperate_token_packing_dataloader does the same thing but swaps step 2 and 3 
+build_seperate_token_packing_dataloader does the same thing but swaps step 2 and 3
 
 Both can be called with a resume_state to resume from any given position deterministically
 """
@@ -435,6 +435,7 @@ def batch_and_shuffle_prefetched_sequences(
     _it_state = state["it_state"]
 
     for i in range(prefetch_size * batch_size):
+        #print(i)
         prefetch_buffer[i], next_it_state = next(data_loader)
     rng.shuffle(prefetch_buffer, axis=0)
     for i in range(seq_idx * batch_size):

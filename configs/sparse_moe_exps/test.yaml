@@ -1,0 +1,74 @@
+dump_dir: /net/projects2/interp/efficient_llms_dumps/hierarchical_fixed
+name: "hierarchical_fixed"
+steps: 10000
+probe_freq: 2000
+seed: 777
+optim:
+    lr: 3e-4
+    warmup: 2000
+    lr_min_ratio: 0.000001
+    clip: 10.0
+
+distributed:
+    fsdp_type: no_shard
+    compile: true
+    model_dtype: bf16
+    matmul_allow_tf32: false
+    selective_activation_checkpointing: false
+    tp_size: 1
+
+model:
+    dim: 768
+    ffn_dim_multiplier: 1.125
+    n_layers: 12
+    n_heads: 8
+    rank: 25
+    weight_tying: True
+    layer_groups: [[0], [1, 2], [3, 4, 5], [6, 7, 8, 9, 10, 11]]
+    lora_rank: 32
+
+data:
+    root_dir: /net/projects2/interp/Efficient-LLMs/data
+    sources:
+        fineweb_edu_10bt_shuffled: 1.0
+    batch_size: 16
+    prefetch_size: 64
+    seq_len: 2048
+    n_views: 2
+    load_async: true
+    tokenizer:
+        path: /net/projects2/interp/Efficient-LLMs/tokenizer/llama3
+        name: bytes
+
+profiling:
+    run: true
+
+checkpoint:
+    dump:
+        every: 2000
+        keep: 1
+    eval:
+        every: 10000
+        keep: 10
+
+logging:
+    freq: 500
+    wandb:
+        project: 40m_baseline
+        entity: muchanem
+        name: 40M_DDP_run_0
+
+eval:
+    generator:
+        max_tokens: 8192
+        dtype: bf16
+        temperature: 1.0
+        top_p: 0.95
+    harness:
+        tasks:
+            - hellaswag
+            - piqa
+            - task: nq_open
+              num_fewshot: 5
+    validation:
+        max_steps: 1000

@@ -11,7 +11,7 @@ import os
 from sentencepiece import SentencePieceProcessor
 import tiktoken
 from tiktoken.load import load_tiktoken_bpe
-
+from transformers import AutoTokenizer, PreTrainedTokenizerFast
 logger = logging.getLogger(__name__)
 
 
@@ -186,6 +186,45 @@ class TikTokenTokenizer(Tokenizer):
         substrs = [text[s:e] for s, e in zip(offsets, offsets[1:] + [None])]
         return substrs, offsets
 
+class HuggingFaceTokenizer(Tokenizer):
+    def __init__(self, path: Optional[str] = None):
+        self.tokenizer = AutoTokenizer.from_pretrained(path)
+        self.bos_id = self.tokenizer.bos_token_id
+        self.eos_id = self.tokenizer.eos_token_id
+        self.n_words = len(self.tokenizer)
+        assert isinstance(self.tokenizer, PreTrainedTokenizerFast), f"Need Fast Tokenizer for offsets"
+
+
+    def encode(self, s: str, add_bos: bool, add_eos):
+        #tokens = sum(self.tokenizer.encode(s, add_special_tokens=False), start=[])
+        tokens = self.tokenizer.encode(s)
+        if add_bos:
+            pass
+            #tokens = [self.bos_id] + tokens
+        if add_eos:
+            tokens = tokens + [self.eos_id]
+        #print(tokens)
+        return tokens
+
+    def decode(self, tokens: List[int]):
+        return self.tokenizer.decode(tokens)
+
+    def get_token_offsets(
+        self, text: str, tokens: Optional[List[int]] = None
+    ) -> Tuple[List[str], List[int]]:
+        # note this is almost certainly incorrect
+        # but, token offsets aren't actually used for anything
+        if tokens is not None:
+            token_bytes = self.tokenizer.decode_tokens_bytes(tokens)
+        else:
+            token_bytes = self.tokenizer.encode(text, allowed_special="all")
+
+        text_len, offsets = 0, []
+        for token in token_bytes:
+            offsets.append(max(0, text_len - (0x80 <= token[0] < 0xC0)))
+            text_len += sum(1 for c in token if not 0x80 <= c < 0xC0)
+        substrs = [text[s:e] for s, e in zip(offsets, offsets[1:] + [None])]
+        return substrs, offsets
 
 def build_tokenizer(name: str, path: Optional[str] = None) -> Tokenizer:
     if name == "bytes":
@@ -196,5 +235,7 @@ def build_tokenizer(name: str, path: Optional[str] = None) -> Tokenizer:
         return SentencePieceTokenizer(path)
     elif name == "tiktoken":
         return TikTokenTokenizer(path)
+    elif name == "hf":
+        return HuggingFaceTokenizer(path)
     else:
         raise NotImplementedError(f"{name} tokenizer type is not implemented")

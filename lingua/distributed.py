@@ -98,7 +98,7 @@ def get_device_mesh(distributed_args: DistributedArgs):
     dp_shard = distributed_args.dp_shard
 
     assert (
-        dp_replicate * dp_shard * tp_size == get_world_size()
+        dp_replicate * dp_shard * tp_size == get_world_size() - 1
     ), f"dp_replicate * dp_shard * tp_size ({dp_replicate} * {dp_shard} * {tp_size}) != world_size ({get_world_size()})"
 
     dims = []
@@ -274,7 +274,15 @@ def setup_torch_distributed(dist_args):
     )
     if torch.cuda.device_count() > 1:
         torch.cuda.set_device(local_rank)
-    torch.distributed.init_process_group(init_method="env://", backend="nccl")
+    training_world_size = get_world_size() - 1
+    if get_global_rank() < training_world_size:
+        logger.info(f"Rank {get_global_rank()} is part of the training group. Initializing...")
+        os.environ["WORLD_SIZE"] = str(training_world_size)
+        os.environ["RANK"] = str(get_global_rank())
+        torch.distributed.init_process_group(init_method="env://", backend="nccl")
+    else:
+        logger.info(f"Rank {get_global_rank()} is part of the distillation group.")
+        pass
     torch.autograd.set_detect_anomaly(dist_args.detect_anomaly)
 
 

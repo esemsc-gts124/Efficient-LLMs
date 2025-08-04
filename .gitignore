@@ -12,3 +12,4 @@ data_8gpu/*
 .venv/*
 run_jobs.sh
 data.tar.zst
+GEMINI.md
