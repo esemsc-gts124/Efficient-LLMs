@@ -3,6 +3,7 @@ name: Baseline
 steps: 10500
 probe_freq: 5000
 seed: 777
+enable_distillation: true  # Enable inter-process communication with distillation rank
 optim:
     lr: 3e-4
     warmup: 2000
