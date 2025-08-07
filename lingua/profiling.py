@@ -101,7 +101,7 @@ class MemSnapshotsProfilerWandb(MemSnapshotsProfiler):
 
 
 @contextlib.contextmanager
-def maybe_run_profiler(dump_dir, module, config: ProfilerArgs):
+def maybe_run_profiler(dump_dir, module, config: ProfilerArgs, group=None):
     # get user defined profiler settings
 
     if config.run:
@@ -112,8 +112,9 @@ def maybe_run_profiler(dump_dir, module, config: ProfilerArgs):
         if get_is_master() and not os.path.exists(trace_dir):
             os.makedirs(trace_dir)
         if torch.distributed.is_initialized():
-            torch.distributed.barrier()
+            torch.distributed.barrier(group=group)
 
+        logger.info("f Made it to profiling step")
         with xformers.profiler.profile(
             output_dir=trace_dir,
             module=module,

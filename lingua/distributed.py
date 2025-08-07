@@ -94,7 +94,7 @@ class EnvironmentArgs:
 
 class InterProcessComm:
     """Helper class for communication between training and distillation process groups"""
-    
+
     def __init__(self, distributed_args: DistributedArgs):
         self.dist_args = distributed_args
         self.is_training = getattr(distributed_args, '_is_training_rank', True)
@@ -103,129 +103,165 @@ class InterProcessComm:
         self.global_group = getattr(distributed_args, '_global_group', None)
         self.training_ranks = getattr(distributed_args, '_training_ranks', [])
         self.distill_ranks = getattr(distributed_args, '_distill_ranks', [])
-        
+
         # Get the distillation rank (last rank)
         self.distill_rank = self.distill_ranks[0] if self.distill_ranks else get_world_size() - 1
         self.training_world_size = len(self.training_ranks)
-        
+
         logger.info(f"[InterProcessComm] Initialized. is_training={self.is_training}, "
                    f"distill_rank={self.distill_rank}, training_world_size={self.training_world_size}")
-    
+
     def sync_model_loaded(self):
         """Synchronize after model loading - distill process signals when ready"""
         logger.info(f"[InterProcessComm.sync_model_loaded] Rank {get_global_rank()} entering sync")
-        
+
         # Create a tensor to signal readiness
         ready_tensor = torch.tensor([1.0], device='cuda')
-        
+
         # Use broadcast from distillation rank to signal when model is loaded
         dist.broadcast(ready_tensor, src=self.distill_rank, group=self.global_group)
-        
+
         logger.info(f"[InterProcessComm.sync_model_loaded] Rank {get_global_rank()} sync complete")
-    
+
+    def sync_train_to_distill(self):
+        """
+        Generic method for holding the distill process until all training ranks are ready.
+        """
+        logger.info(f"[InterProcessComm.sync_train_to_distill] Rank {get_global_rank()} entering sync")
+
+        if self.is_training:
+            # Training ranks: send batch to distill rank
+            # Move to GPU for potentially faster transfer
+            ready_tensor = torch.tensor([1.0], device='cuda')
+            # Use gather_object for simplicity with proper handling
+            gather_list = None
+            if get_global_rank() in self.training_ranks:
+                # Only training ranks participate in sending
+                dist.gather(ready_tensor, gather_list, dst=self.distill_rank, group=self.global_group)
+
+            logger.info(f"[InterProcessComm.sync_train_to_distill] Rank {get_global_rank()} sent signal")
+            return None
+        else:
+            # Create list to receive all batches (one per rank in global group)
+            gather_list = [torch.zeros((1,), dtype=torch.long, device='cuda')
+                          for _ in range(get_world_size())]
+
+            # Dummy tensor for distill rank's "contribution"
+            dummy_tensor = torch.zeros((1,), dtype=torch.long, device='cuda')
+
+            # Gather from all ranks
+            dist.gather(dummy_tensor, gather_list, dst=self.distill_rank, group=self.global_group)
+
+            # Return only the training ranks' data
+            gathered_batches = [gather_list[i] for i in self.training_ranks]
+            logger.info(f"[InterProcessComm.sync_train_to_distill] Rank {get_global_rank()} sync complete")
+            return None
+
+
+
     def gather_batch_to_distill(self, batch_tokens):
         """
         Gather batch tokens from all training ranks to distillation rank.
         Training ranks send their batch, distill rank receives all.
-        
+
         Args:
             batch_tokens: CPU tensor of shape (batch_size, seq_len) with token IDs
-        
+
         Returns:
             - For training ranks: None
             - For distill rank: List of tensors, one per training GPU
         """
         logger.info(f"[InterProcessComm.gather_batch] Rank {get_global_rank()} starting gather")
         logger.info(f"[InterProcessComm.gather_batch] Input shape: {batch_tokens.shape if batch_tokens is not None else 'None'}")
-        
+
         # First, all ranks need to know the shape
         shape_tensor = torch.zeros(2, dtype=torch.long, device='cuda')
         dist.broadcast(shape_tensor, src=0, group=self.global_group)
         batch_shape = tuple(shape_tensor.tolist())
-        
+
         if self.is_training:
             # Training ranks: send batch to distill rank
             # Move to GPU for potentially faster transfer
             batch_gpu = batch_tokens.cuda()
             logger.info(f"[InterProcessComm.gather_batch] Training rank {get_global_rank()} sending shape {batch_gpu.shape}")
-            
+
             # Use gather_object for simplicity with proper handling
             gather_list = None
             if get_global_rank() in self.training_ranks:
                 # Only training ranks participate in sending
                 dist.gather(batch_gpu, gather_list, dst=self.distill_rank, group=self.global_group)
-            
+
             logger.info(f"[InterProcessComm.gather_batch] Training rank {get_global_rank()} gather complete")
             return None
         else:
-            # Distill rank: receive batches from all training ranks            
+            # Distill rank: receive batches from all training ranks
             logger.info(f"[InterProcessComm.gather_batch] Distill rank receiving batches of shape {batch_shape}")
-            
+
             # Create list to receive all batches (one per rank in global group)
-            gather_list = [torch.zeros(batch_shape, dtype=torch.long, device='cuda') 
+            gather_list = [torch.zeros(batch_shape, dtype=torch.long, device='cuda')
                           for _ in range(get_world_size())]
-            
+
             # Dummy tensor for distill rank's "contribution"
             dummy_tensor = torch.zeros(batch_shape, dtype=torch.long, device='cuda')
-            
+
             # Gather from all ranks
             dist.gather(dummy_tensor, gather_list, dst=self.distill_rank, group=self.global_group)
-            
+
             # Return only the training ranks' data
             gathered_batches = [gather_list[i] for i in self.training_ranks]
             logger.info(f"[InterProcessComm.gather_batch] Distill rank gathered {len(gathered_batches)} batches")
-            
+
             return gathered_batches
-    
+
     def scatter_tensors_from_distill(self, tensors_to_scatter=None):
         """
         Scatter tensors from distillation rank back to training ranks.
-        
+
         Args:
             tensors_to_scatter: For distill rank - list of GPU tensors to scatter, one per training rank
                               For training ranks - None
-        
+
         Returns:
             The tensor received by each rank (on GPU)
         """
         logger.info(f"[InterProcessComm.scatter_tensors] Rank {get_global_rank()} starting scatter")
-        
+
         # First, broadcast the shape from distill rank
         shape_tensor = torch.zeros(3, dtype=torch.long, device='cuda')  # Assuming max 3D tensor
-        
+
         if not self.is_training and tensors_to_scatter is not None:
             # Distill rank: prepare shape info
             shape = list(tensors_to_scatter[0].shape)
             # Pad to 3 dimensions for broadcast
             shape_padded = shape + [0] * (3 - len(shape))
             shape_tensor = torch.tensor(shape_padded, dtype=torch.long, device='cuda')
-        
+
         dist.broadcast(shape_tensor, src=self.distill_rank, group=self.global_group)
-        
+
         # Extract actual dimensions (non-zero values)
         shape_list = shape_tensor.tolist()
         actual_shape = [s for s in shape_list if s > 0]
-        
+
         if self.is_training:
-            # Training ranks: receive tensor from distill rank            
+            # Training ranks: receive tensor from distill rank
             logger.info(f"[InterProcessComm.scatter_tensors] Training rank {get_global_rank()} expecting shape {actual_shape}")
-            
+
             # Prepare to receive the scattered tensor
             recv_tensor = torch.zeros(actual_shape, dtype=torch.float32, device='cuda')
-            
+
             # Scatter operation
             dist.scatter(recv_tensor, scatter_list=None, src=self.distill_rank, group=self.global_group)
-            
+
             logger.info(f"[InterProcessComm.scatter_tensors] Training rank {get_global_rank()} received tensor shape {recv_tensor.shape}")
             return recv_tensor
-            
+
         else:
             # Distill rank: scatter tensors to training ranks
             if tensors_to_scatter is None or len(tensors_to_scatter) == 0:
                 raise ValueError("Distill rank must provide tensors to scatter")
-            
+
             logger.info(f"[InterProcessComm.scatter_tensors] Distill rank scattering {len(tensors_to_scatter)} tensors of shape {actual_shape}")
-            
+
             # Prepare scatter list for all ranks (training + distill)
             scatter_list = []
             for rank in range(get_world_size()):
@@ -236,21 +272,21 @@ class InterProcessComm:
                 else:
                     # Dummy tensor for distill rank
                     scatter_list.append(tensors_to_scatter[0])
-            
+
             # Scatter operation
-            dist.scatter(scatter_list[self.distill_rank], scatter_list=scatter_list, 
+            dist.scatter(scatter_list[self.distill_rank], scatter_list=scatter_list,
                         src=self.distill_rank, group=self.global_group)
-            
+
             logger.info(f"[InterProcessComm.scatter_tensors] Distill rank scatter complete")
             return None
-    
+
     def send_batch_shape(self, batch_shape):
         """Send batch shape from rank 0 to all ranks (used for coordination)"""
         if batch_shape is not None:
             shape_tensor = torch.tensor(batch_shape, dtype=torch.long, device='cuda')
         else:
             shape_tensor = torch.zeros(2, dtype=torch.long, device='cuda')
-        
+
         dist.broadcast(shape_tensor, src=0, group=self.global_group)
         return tuple(shape_tensor.tolist())
 
@@ -259,10 +295,10 @@ def get_device_mesh(distributed_args: DistributedArgs):
     tp_size = distributed_args.tp_size
     dp_replicate = distributed_args.dp_replicate
     dp_shard = distributed_args.dp_shard
-    
+
     # Check if we're in training or distillation group
     is_training = getattr(distributed_args, '_is_training_rank', True)
-    
+
     if is_training:
         # For training ranks, use the training group size
         training_world_size = len(getattr(distributed_args, '_training_ranks', list(range(get_world_size() - 1))))
@@ -290,22 +326,22 @@ def get_device_mesh(distributed_args: DistributedArgs):
     return init_device_mesh("cuda", mesh_shape=dims, mesh_dim_names=names)
 
 
-def dist_max(x: Union[int, float], mesh: DeviceMesh = None):
+def dist_max(x: Union[int, float], mesh: DeviceMesh = None, group=None):
     tensor = torch.tensor(x).cuda()
-    dist.all_reduce(tensor, op=ReduceOp.MAX, group=mesh.get_group() if mesh else None)
+    dist.all_reduce(tensor, op=ReduceOp.MAX, group=group)
     return tensor
 
 
-def dist_mean(x: Union[int, float], mesh: DeviceMesh = None):
+def dist_mean(x: Union[int, float], mesh: DeviceMesh = None, group=None):
     tensor = torch.tensor(x).cuda()
-    dist.all_reduce(tensor, op=ReduceOp.AVG, group=mesh.get_group() if mesh else None)
+    dist.all_reduce(tensor, op=ReduceOp.AVG, group=group)
     return tensor
 
 
-def dist_mean_dict(x):
+def dist_mean_dict(x, group=None):
     r = dict()
     for k in x:
-        r[k] = dist_mean(x[k])
+        r[k] = dist_mean(x[k], group=group)
         r[k] = r[k].item() if (r[k].dim() == 0) else r[k].tolist()
     return r
 
@@ -446,37 +482,37 @@ def setup_torch_distributed(dist_args):
     )
     if torch.cuda.device_count() > 1:
         torch.cuda.set_device(local_rank)
-    
+
     # First, initialize the global process group with all ranks
     logger.info(f"Initializing global process group with all {get_world_size()} ranks")
     torch.distributed.init_process_group(init_method="env://", backend="nccl")
-    
+
     # Create separate process groups for training and distillation
     training_world_size = get_world_size() - 1
     training_ranks = list(range(training_world_size))
     distill_ranks = [training_world_size]
-    
+
     # Create the training group
     training_group = dist.new_group(ranks=training_ranks)
     # Create the distillation group (single rank)
     distill_group = dist.new_group(ranks=distill_ranks)
     # Create a combined group for cross-communication (all ranks)
     global_group = dist.group.WORLD
-    
+
     # Store groups for later use
     dist_args._training_group = training_group
     dist_args._distill_group = distill_group
     dist_args._global_group = global_group
     dist_args._training_ranks = training_ranks
     dist_args._distill_ranks = distill_ranks
-    
+
     if get_global_rank() < training_world_size:
         logger.info(f"Rank {get_global_rank()} is part of the training group. Training ranks: {training_ranks}")
         dist_args._is_training_rank = True
     else:
         logger.info(f"Rank {get_global_rank()} is part of the distillation group. Distill ranks: {distill_ranks}")
         dist_args._is_training_rank = False
-        
+
     torch.autograd.set_detect_anomaly(dist_args.detect_anomaly)
 
 

@@ -91,7 +91,7 @@ class TrainArgs:
 
     # Nb optimizer steps to take
     steps: int = 1000
-    
+
     # Enable distillation communication
     enable_distillation: bool = True
 
@@ -240,10 +240,10 @@ def train(args: TrainArgs):
         init_signal_handler(set_preemption_flag)  # For handling preemption signals.
         setup_env(args.env)
         setup_torch_distributed(args.distributed)
-        
+
         # Create inter-process communication helper
         ipc = InterProcessComm(args.distributed)
-        
+
         if ipc.is_training:
             logger.info(f"Rank {get_global_rank()} starting training process")
             main_train(args, context_stack, ipc)
@@ -257,53 +257,54 @@ def distillation_process(args, context_stack, ipc):
     Distillation process that loads a HuggingFace model and communicates with training ranks.
     """
     logger.info(f"[DISTILL] Rank {get_global_rank()} initializing distillation process")
-    
+
     # TODO: Load HuggingFace model here
     logger.info("[DISTILL] Loading HuggingFace model...")
     # model = load_huggingface_model(...)  # User will implement this
-    
+
     # Simulate model loading time for testing
     import time
     time.sleep(2)
     logger.info("[DISTILL] Model loaded successfully!")
-    
+
     # Signal to training ranks that model is loaded
     logger.info("[DISTILL] Signaling model ready to training ranks")
     ipc.sync_model_loaded()
-    
+
     # Main distillation loop
     step = 0
     while step < args.steps:
+        #ipc.sync_train_to_distill()
         logger.info(f"[DISTILL] Step {step}: Waiting for batch from training ranks")
-        
+
         # Receive batches from all training ranks
         gathered_batches = ipc.gather_batch_to_distill(None)
-        
+
         if gathered_batches:
             logger.info(f"[DISTILL] Received {len(gathered_batches)} batches")
             for i, batch in enumerate(gathered_batches):
                 logger.info(f"[DISTILL] Batch {i} shape: {batch.shape}")
-            
+
             # TODO: Run forward pass on HuggingFace model
             # distill_outputs = model(gathered_batches)
-            
+
             # For now, create dummy outputs to send back
             dummy_outputs = []
             for batch in gathered_batches:
                 # Create dummy tensor with same batch size
                 dummy_output = torch.randn(batch.shape[0], 768, device='cuda')  # 768 is typical hidden size
                 dummy_outputs.append(dummy_output)
-            
+
             logger.info(f"[DISTILL] Scattering outputs back to training ranks")
             # Send outputs back to training ranks
             ipc.scatter_tensors_from_distill(dummy_outputs)
-            
+
         step += 1
-        
+
         # Add a small delay to avoid overwhelming logs during testing
         if step % 100 == 0:
             logger.info(f"[DISTILL] Completed {step} steps")
-    
+
     logger.info("[DISTILL] Distillation process complete")
 
 
@@ -359,7 +360,7 @@ def main_train(args, context_stack, ipc):
             torch.manual_seed(args.model.seed)
             model.init_weights()
     check_model_value_range(model, range=10.0, std=1.0)
-    
+
     # Wait for distillation process to load its model
     if args.enable_distillation:
         logger.info(f"[TRAIN] Rank {get_global_rank()} waiting for distillation model to load...")
@@ -389,14 +390,19 @@ def main_train(args, context_stack, ipc):
         data_loader_state=data_loader_state,
         scheduler=scheduler,
     )
+    logger.info(f"[DEBUG] Rank {get_global_rank()} - Inited TrainState")
+    checkpoint = CheckpointManager.instantiate_and_make_dir(args.checkpoint,
+        group=ipc.training_group if args.enable_distillation else None)
+    logger.info(f"[DEBUG] Rank {get_global_rank()} - Before checkpoint.load()")
+    checkpoint.load(model, optimizer, train_state, world_mesh,
+                    group=ipc.training_group if args.enable_distillation else None)
+    logger.info(f"[DEBUG] Rank {get_global_rank()} - After checkpoint.load()")
 
-    checkpoint = CheckpointManager.instantiate_and_make_dir(args.checkpoint)
-    checkpoint.load(model, optimizer, train_state, world_mesh)
     # Either load from latest checkpoint or start from scratch
     if args.probe_freq is not None:
         if get_is_master():
             os.makedirs(Path(args.dump_dir) / "probe", exist_ok=True)
-        torch.distributed.barrier()
+        torch.distributed.barrier(group=ipc.training_group if args.enable_distillation else None)
         probe = AutoProbeD(
             model,
             (
@@ -420,13 +426,15 @@ def main_train(args, context_stack, ipc):
         )
     )
     torch_profiler = context_stack.enter_context(
-        maybe_run_profiler(args.dump_dir, model, args.profiling)
+        maybe_run_profiler(args.dump_dir, model, args.profiling,
+            group=ipc.training_group if args.enable_distillation else None)
     )
 
     nwords_since_last_log = 0
     time_last_log = timer()
     gc.collect()
     while train_state.step < args.steps:
+        #ipc.sync_train_to_distill()
         # We constrain train_state.acc_step to be in range 0 to args.grad_acc_steps - 1
         train_state.acc_step += 1
         train_state.acc_step = train_state.acc_step % args.grad_acc_steps
@@ -452,30 +460,30 @@ def main_train(args, context_stack, ipc):
         nwords_since_last_log += input_ids.numel()
 
         bsz, seqlen = labels.shape
-        
+
         # ============ DISTILLATION COMMUNICATION ============
         distill_output = None
         if args.enable_distillation:
             # Send batch tokens to distillation process and receive distillation outputs
             logger.info(f"[TRAIN] Rank {get_global_rank()} step {train_state.step}: Sending batch to distillation")
-            
+
             # First, broadcast batch shape from rank 0 for coordination
             if get_global_rank() == 0:
                 batch_shape = [bsz, seqlen]
                 ipc.send_batch_shape(batch_shape)
             else:
                 batch_shape = ipc.send_batch_shape(None)
-            
+
             # Extract just the token IDs (on CPU as requested)
             batch_tokens = batch[:, :, 0]  # Shape: (bsz, seqlen), still on CPU
-            
+
             # Send batch to distillation process
             ipc.gather_batch_to_distill(batch_tokens)
-            
+
             # Receive distillation outputs
             logger.info(f"[TRAIN] Rank {get_global_rank()} waiting for distillation outputs")
             distill_output = ipc.scatter_tensors_from_distill()
-            
+
             if distill_output is not None:
                 logger.info(f"[TRAIN] Rank {get_global_rank()} received distillation output shape: {distill_output.shape}")
                 # TODO: Use distill_output in loss computation
@@ -561,8 +569,8 @@ def main_train(args, context_stack, ipc):
         curr_iter_time = round(start_timer.elapsed_time(end_timer) * 1e-3, 4)
 
         # if profiler is active
-        if torch_profiler:
-            xformers.profiler.step()
+        #if torch_profiler:
+        #    xformers.profiler.step()
 
         # log metrics
         if every_n_steps(
@@ -617,7 +625,8 @@ def main_train(args, context_stack, ipc):
 
             to_sync = {}
             to_sync["loss/out"] = loss.item()
-            metrics.update(dist_mean_dict(to_sync))
+            metrics.update(dist_mean_dict(to_sync,
+                group=ipc.training_group if args.enable_distillation else None))
 
             if get_is_master():
                 metric_logger.log(metrics)
@@ -649,6 +658,7 @@ def main_train(args, context_stack, ipc):
                 train_state,
                 args,
                 device_mesh=world_mesh,
+                group=ipc.training_group if args.enable_distillation else None
             )
 
         if args.eval is not None and every_n_steps(
@@ -698,6 +708,7 @@ def main_train(args, context_stack, ipc):
                     train_state,
                     args,
                     device_mesh=world_mesh,
+                    group=ipc.training_group if args.enable_distillation else None
                 )
             requeue_slurm_job()
             sys.exit(0)
@@ -709,6 +720,7 @@ def main_train(args, context_stack, ipc):
             train_state,
             args,
             device_mesh=world_mesh,
+            group=ipc.training_group if args.enable_distillation else None
         )
 
     gc.collect()

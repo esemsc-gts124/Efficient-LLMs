@@ -90,7 +90,7 @@ def consolidate_checkpoints(ckpt_dir: str):
 def load_from_checkpoint(ckpt_dir: str, model: nn.Module, optimizer: Optional[torch.optim.Optimizer] = None, model_key: str = "model", optim_key: str = "optim"):
     if not (Path(ckpt_dir) / '.metadata').exists():
         raise ValueError(f"Please convert the checkpoint distcp format using `torch.distributed.checkpoint.format_utils.torch_save_to_dcp` before loading it")
-    
+
     state_dict = {}
     if optimizer is not None:
         state_dict[model_key], state_dict[optim_key] = get_state_dict(model, optimizer)
@@ -98,7 +98,7 @@ def load_from_checkpoint(ckpt_dir: str, model: nn.Module, optimizer: Optional[to
         state_dict[model_key] = get_model_state_dict(model)
         if model_key == "": # If only loading a model directly, the key should be empty
             state_dict = state_dict.pop(model_key)
-    
+
     dcp.load(state_dict, checkpoint_id=ckpt_dir)
 
 class CheckpointManager:
@@ -122,7 +122,7 @@ class CheckpointManager:
         folders.sort(key=lambda p: _get_key_step(p.name))
         return folders
 
-    def clean_up(self):
+    def clean_up(self, group=None):
         logger.info("Cleaning up checkpoints...")
         dump_folders = []
         eval_folders = []
@@ -163,7 +163,7 @@ class CheckpointManager:
                         file.rmdir()
                 folder.rmdir()
 
-        dist.barrier()
+        dist.barrier(group=group)
 
         self.existing_saves = list(folder_to_keep)
         self.existing_saves.sort(key=lambda p: _get_key_step(p.name))
@@ -176,12 +176,12 @@ class CheckpointManager:
                 break
         return path
 
-    def _create_folder(self, base_path: Path, folder_name: str) -> Path:
+    def _create_folder(self, base_path: Path, folder_name: str, group=None) -> Path:
         folder = base_path / folder_name
         if get_is_master():
             folder.mkdir(parents=False, exist_ok=True)
         if dist.is_initialized():
-            dist.barrier()
+            dist.barrier(group=group)
         return folder
 
     def _get_dp_tp_mesh(
@@ -214,15 +214,16 @@ class CheckpointManager:
         train_state,
         config,
         device_mesh: Optional[DeviceMesh] = None,
+        group=None
     ) -> bool:
 
         # When creating directory check if only rank0 or is there other solution
         path = Path(self.path)
-        curr_save_dir = self._create_folder(path, FOLDER_NAME.format(train_state.step))
+        curr_save_dir = self._create_folder(path, FOLDER_NAME.format(train_state.step), group=group)
         logger.info(f"Saving to: {str(curr_save_dir)}")
 
         if dist.is_initialized():
-            dist.barrier()
+            dist.barrier(group=group)
 
         logger.info("Saving...")
         state_dict = self.get_state_dict(model, optimizer)
@@ -230,7 +231,7 @@ class CheckpointManager:
         logger.info("State dict saved!")
 
         if dist.is_initialized():
-            dist.barrier()
+            dist.barrier(group=group)
 
         if get_is_master():
             with open(curr_save_dir / CONFIG_NAME, "w") as f:
@@ -255,7 +256,7 @@ class CheckpointManager:
         self.clean_up()
 
         if dist.is_initialized():
-            dist.barrier()
+            dist.barrier(group=group)
         return True
 
     @torch.no_grad()
@@ -266,6 +267,7 @@ class CheckpointManager:
         train_state,
         device_mesh: DeviceMesh,
         path: Optional[Path] = None,
+        group=None
     ):
         dp_rank, tp_rank = self._get_dp_tp_mesh(device_mesh)
         # Loading tries to load the provided path, if not available the last saved step and finally from the init path
@@ -290,11 +292,11 @@ class CheckpointManager:
         )
         dcp.load(state_dict, checkpoint_id=path)
         logger.info("Model and optim reloaded")
-    
+
     @classmethod
-    def instantiate_and_make_dir(cls, args: CheckpointArgs):
+    def instantiate_and_make_dir(cls, args: CheckpointArgs, group):
         if get_is_master():
             os.makedirs(args.path, exist_ok=True)
-        dist.barrier()
+        dist.barrier(group=group)
 
         return cls(args)
