@@ -1,3 +1,29 @@
+# Attention Sharing
+
+### Conceptual Background
+* We want to share the Q K V, or the heads of the attention mechanism by having them differ by a LoRA module
+* We can have one matrix for each head, and then have QKV differ by a LoRA. Or one matrix for each of QKV and have each head differ by a LoRA
+* If we want to have both shared at once, we could have one matrix and LoRA modules for the combinations: $|\{Q, K, V\}| \times \text{n\_heads}$ . Or we could have LoRA modules for Q, K, V (for all heads) and for each head (across all Q, K, V). We call the second method 2-step sharing
+* Finally, we could also have sharing such that e.g. Q, K share but V differs. Or, have 8 heads share one base matrix and the other 8 share another base matrix (we call this grouping)
+### Getting Up and Running
+* You can set up sharing with the following parameters in the YAML
+```yaml
+model:
+  attn_sharing: # share attention at all
+  head_sharing: # share across heads
+  grouping: # if sharing across heads, how many groups. i.e. 1 = all heads share a single full-rank matrix
+  qkv_sharing: # this is better illustrated by example. list of lists where the inner list is the the shared part
+  - - k
+    - v
+  - - q
+
+  rank: # what rank is the LoRA module?
+  two_step: # share in the 2-step manner?
+  freeze_attn: # make attention an unlearnable param?
+```
+### Experiments to Run
+* All of the yamls in `configs/attn_share_exps`
+
 # Meta Lingua
 
 **Mathurin Videau***, **Badr Youbi Idrissi***, Daniel Haziza, Luca Wehrstedt, Jade Copet, Olivier Teytaud, David Lopez-Paz. ***Equal and main contribution**
