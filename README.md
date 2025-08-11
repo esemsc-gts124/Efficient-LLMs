@@ -1,3 +1,28 @@
+# Weight Shared LLM README
+### Running Lingua
+* Follow the Quick Start instructions from the lingua repo
+* Note: You'll want to set nchunks to 32 since we'll likely do multinode training
+* Generally the configs are in configs/blah.yaml. Here's a few notes on some non-obvious parameters
+```yaml
+data:
+	root_dir: # path to parent dir of where the data is
+	sources:
+		[name of source] # this should be the name of the shuffled data dir. e.g. fineweb_edu_shuffled
+tokenizer:
+    name: sp # sp if llama2, tiktoken if llama3. On distill branch, can set 'huggingface' and use any huggingface tokenizer
+    path: # path to tokenizer.model
+model:
+    ffn_dim_multiplier: # by default the ffn dim is the nearest multiple of 256 to 4 * dim. This is what to multiply 4 * dim by
+```
+### A Few Useful Tools:
+* [This spreadsheet](https://docs.google.com/spreadsheets/d/1bJHtckAp07BiOppOJD7UbwFTrm-FGwjxSsdB176lS7I/edit?gid=1665764207#gid=1665764207) allows you to find reasonable model shapes/configurations for any number of non-vocabulary parameters between 5 and 380M parameters
+* [This spreadsheet](https://docs.google.com/spreadsheets/d/1LyE8M1MJuf7GY3uVSPHmytXPIb5Zf_8nCgcEGvUlkOQ/edit?gid=0#gid=0) contains the configurations of the various qwen models, a tool to calculate parameters/train time, and a tool to find the ideal ffn multiplier (given the lingua formula)
+* [This script](https://github.com/esemsc-gts124/Efficient-LLMs/blob/moe/apps/main/direct_count.py) instantiates the model on CPU to get a direct count of the number of parameters (the spreadsheets both give slightly inaccurate counts)
+	* You will also want to make sure your apps/main/train.py script has the line `        args.parameter_count = model_param_count` somewhere around line 291 so this count gets logged to W&B
+### Codebase Organization
+* We have the following branches: `attn-sharing`, `distill`, `embedding_exps`, `moe`, `rrt` which contain the code for each technique we've been trying (embedding_exps being for the factorised vocab/up projection layers)
+* Each branch does/will soon have a readme on what we want to do/test
+
 # Meta Lingua
 
 **Mathurin Videau***, **Badr Youbi Idrissi***, Daniel Haziza, Luca Wehrstedt, Jade Copet, Olivier Teytaud, David Lopez-Paz. ***Equal and main contribution**
