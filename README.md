@@ -1,3 +1,20 @@
+# RRT Branch README
+This branch contains all of the code to experiment and test with Relaxed Recursive Transformer architectures. By default, Lingua has predefined transformer components in `lingua/transformer.py`, these components are then pieced together in `apps/main/transformer.py` to create the model. In this branch however, we use `apps/main/rrt.py` to create our model with custom layer sharing (with LoRA) classes. As such, the main import in the training loop in `apps/main/train.py` has been changed to import from `rrt.py` instead of `transformer.py`.
+
+### Config Instructions
+Running a relaxed recursive model uses the same methods as the main (and other) branches, the key distinction is the model dataclass. Here, you must specify the layer sharing groupings (i.e. which layers share which weights) as well as the LoRA rank for the shared layers (LoRA rank has a default value of 8). Layer groupings are stored as a list of lists within the `model.layer_groups` yaml field, layers that share a sublist are defined as sharing a set of weights between them - the example config below has layer 0 as a unique, unshared layer, layers 1 and 2 share weights, layers 3, 4, 5 share weights, and layers 6, 7, 8, 9, 10, 11 share a set of weights. LoRA rank is determined by the `model.lora_rank` field and will only apply to shared layers (as unshared layers do not have associated LoRAs).
+```yaml
+model:
+    dim: ...
+    ffn_dim_multiplier: ...
+    .
+    .
+    .
+    layer_groups: [[0], [1, 2], [3, 4, 5], [6, 7, 8, 9, 10, 11]]  # hierarchical sharing
+    lora_rank: 32  # LoRA rank of 32
+```
+
+
 # Meta Lingua
 
 **Mathurin Videau***, **Badr Youbi Idrissi***, Daniel Haziza, Luca Wehrstedt, Jade Copet, Olivier Teytaud, David Lopez-Paz. ***Equal and main contribution**
