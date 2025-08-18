@@ -1,0 +1,77 @@
+dump_dir: /scratch_dgxl/gts124/RDS/home/Efficient-LLMs/final_checkpoints/rrt_comparison/1B_hierarchy
+name: "1B_hierarchy_RRTComparison"
+steps: 20000
+probe_freq: 2000
+seed: 777
+optim:
+    lr: 3e-4
+    warmup: 2000
+    lr_min_ratio: 0.000001
+    clip: 10.0
+
+distributed:
+    fsdp_type: no_shard
+    compile: true
+    model_dtype: bf16
+    matmul_allow_tf32: false
+    selective_activation_checkpointing: false
+    tp_size: 1
+
+model:
+    dim: 4304
+    ffn_dim_multiplier: 1.125
+    ffn_dim: 13056
+    n_layers: 12
+    n_heads: 8
+    rank: 25
+    weight_tying: True
+    layer_groups: [[0], [1, 2], [3, 4, 5], [6, 7, 8, 9, 10, 11]]
+    lora_rank: 32
+
+data:
+    root_dir: /scratch_dgxl/gts124/RDS/home/fwedu_10bt
+    sources:
+        fineweb_edu_10bt_shuffled: 1.0
+    batch_size: 16
+    prefetch_size: 64
+    seq_len: 2048
+    n_views: 2
+    load_async: true
+    tokenizer: 
+        path: /scratch_dgxl/gts124/RDS/home/Efficient-LLMs/llama3_tokenizer/original/tokenizer.model
+        name: tiktoken
+
+profiling:
+    run: true
+
+checkpoint:
+    dump:
+        every: 2000
+        keep: 10
+    eval:
+        every: 2000
+        keep: 10
+
+logging:
+    freq: 100
+    wandb:
+        project: MSc_Results
+        entity: gts124-imperial-college-london
+        name: 1B_hierarchy_RRTComparison
+
+eval:
+    generator:
+        max_tokens: 8192
+        dtype: bf16
+        temperature: 1.0
+        top_p: 0.95
+    harness:
+        tasks:
+            - hellaswag
+            - piqa
+            - task: nq_open
+              num_fewshot: 5
+    validation:
+        max_steps: 1000
+
+
