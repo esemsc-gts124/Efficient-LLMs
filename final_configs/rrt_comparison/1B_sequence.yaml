@@ -49,7 +49,7 @@ checkpoint:
         every: 2000
         keep: 10
     eval:
-        every: 2000
+        every: 20500
         keep: 10
 
 logging:
