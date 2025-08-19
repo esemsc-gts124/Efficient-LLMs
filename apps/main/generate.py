@@ -13,7 +13,8 @@ from omegaconf import OmegaConf
 from torch.nn import functional as F
 import xformers
 
-from apps.main.transformer import LMTransformer, LMTransformerArgs
+# from apps.main.transformer import LMTransformer, LMTransformerArgs
+from apps.main.rrt import LMTransformer, LMTransformerArgs
 from lingua.args import dataclass_from_dict
 from lingua.checkpoint import CONSOLIDATE_NAME
 from lingua.tokenizer import Tokenizer, build_tokenizer
@@ -188,6 +189,7 @@ class PackedCausalTransformerGenerator:
         self.padded_doc_start = None
         self.prefill_mask = None
 
+
     def clear_cache(self, offset):
         for module in self.model.modules():
             if isinstance(module, Attention):
@@ -201,6 +203,8 @@ class PackedCausalTransformerGenerator:
                         self.device,
                     )
                 module.kv_cache.offset = offset
+
+
 
     @torch.compiler.disable
     def setup_prefilling(self, lengths: torch.Tensor):
@@ -247,10 +251,19 @@ class PackedCausalTransformerGenerator:
         #              3 00000111000
         # We make sure to skip the empty cache positions
         # and only attend to positions within the same sequence
-        doc_mask_mod = generate_doc_mask_mod(causal_mask, lengths, padded_lengths)
-        self.prefill_mask = create_block_mask(
-            doc_mask_mod, 1, None, lengths.sum(), max_tokens
-        )
+
+        self.prefill_doc_id, self.prefill_tok_id = lengths_to_local_ids(lengths)
+        self.padded_doc_id, self.padded_tok_id = lengths_to_local_ids(padded_lengths)
+
+        total_length = lengths.sum().item()
+
+        doc_mask = self.prefill_doc_id[:, None] == self.padded_doc_id[None, :]
+        causal_mask = self.prefill_tok_id[:, None] <= self.padded_tok_id[None, :]
+        self.prefill_mask = "causal"
+
+
+
+
 
         # This creates the prefilling token ids which look like
         # the following for the packed sequence abcdefg1234
@@ -260,14 +273,14 @@ class PackedCausalTransformerGenerator:
         # This is used to compute ROPE and to update the cache
         # At each forward pass the current tokens are written to
         # offset + tok_id
-        self.prefill_doc_id, self.prefill_tok_id = lengths_to_local_ids(lengths)
+        # self.prefill_doc_id, self.prefill_tok_id = lengths_to_local_ids(lengths)
 
         # This creates the padded token and document ids
         # which look like the following for the packed sequence ab123
         #               ab---123---               ab---123---
         # padded_doc_id 00000111111 padded_tok_id 01234012345
         # This will later be useful for the attention mask at generation
-        self.padded_doc_id, self.padded_tok_id = lengths_to_local_ids(padded_lengths)
+        # self.padded_doc_id, self.padded_tok_id = lengths_to_local_ids(padded_lengths)
 
     @torch.compiler.disable
     def setup_generation(self, lengths):
@@ -282,6 +295,8 @@ class PackedCausalTransformerGenerator:
         # the document id is just an arange
         self.current_doc_id = torch.arange(lengths.size(0), device=lengths.device)
 
+
+
     # From here on some methods for generation
     def prefill(self, tokens: torch.Tensor, lengths: torch.Tensor):
         # Prefilling is done by taking multiple packed sequences and
@@ -290,8 +305,10 @@ class PackedCausalTransformerGenerator:
         prefill_out = self.model.forward(
             tokens,
             tok_idx=self.prefill_tok_id,
-            mask=self.prefill_mask,
-            attn_impl="flex_attention",
+            # mask=self.prefill_mask,
+            mask="causal",
+            # attn_impl="flex_attention",
+            attn_impl="sdpa",
         )
         self.setup_generation(lengths=lengths)
         return prefill_out
@@ -313,11 +330,13 @@ class PackedCausalTransformerGenerator:
         out = self.model.forward(
             current_token,
             tok_idx=self.current_tok_id,  # n_seqs
-            mask=mask,
+            mask="causal",
             attn_impl="sdpa",
         )
         self.current_tok_id += 1
         return out
+
+
 
     @torch.inference_mode()
     def generate(self, prompts):
@@ -462,3 +481,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+
