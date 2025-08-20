@@ -1,6 +1,6 @@
 dump_dir: /scratch_dgxl/gts124/RDS/home/Efficient-LLMs/final_checkpoints/rrt_comparison/1B_sequence
 name: "1B_sequence_RRTComparison"
-steps: 20000
+steps: 76200
 probe_freq: 2000
 seed: 777
 optim:
@@ -46,11 +46,11 @@ profiling:
 
 checkpoint:
     dump:
-        every: 2000
-        keep: 10
+        every: 19050
+        keep: 4
     eval:
-        every: 20500
-        keep: 10
+        every: 76200
+        keep: 1
 
 logging:
     freq: 100
