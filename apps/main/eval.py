@@ -6,6 +6,7 @@ from datetime import datetime
 import json
 import logging
 import os
+import lm_eval
 from pathlib import Path
 from lm_eval.api.instance import Instance
 from lm_eval.api.model import LM
@@ -18,7 +19,8 @@ from apps.main.generate import (
     PackedCausalTransformerGeneratorArgs,
     load_consolidated_model_and_tokenizer,
 )
-from apps.main.transformer import LMTransformer, LMTransformerArgs
+# from apps.main.transformer import LMTransformer, LMTransformerArgs
+from apps.main.rrt import LMTransformer, LMTransformerArgs
 from lingua.args import dump_config
 from lingua.checkpoint import CONSOLIDATE_FOLDER, consolidate_checkpoints
 from lingua.data import init_choice_state, setup_sources
@@ -251,7 +253,7 @@ def launch_eval(cfg: EvalArgs):
     wrap = EvalHarnessLM(generator)
     kwargs = asdict(cfg.harness)
     if "verbosity" in kwargs: #  monkeypatch for verbosity typo
-        kwargs["verbostiy"] = kwargs.pop("verbosity")
+        kwargs["verbosity"] = kwargs.pop("verbosity")
     results = simple_evaluate(wrap, **kwargs)
     val_results =  None
     if cfg.validation:
