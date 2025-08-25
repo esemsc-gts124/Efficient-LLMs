@@ -309,6 +309,7 @@ def train(args: TrainArgs):
         logger.info("Building model")
 
         # Initializing Model in meta device allows us to initialize models much bigger than 1 gpu's memory
+        logger.info(f"Building model with these final args: {args.model}")
         with torch.device("meta"):
             model = LMTransformer(args.model)
         logger.info("Model is built !")
