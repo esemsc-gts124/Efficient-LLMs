@@ -123,6 +123,7 @@ def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor, seq_dim: int
     return freqs_cis.view(*shape)
 
 
+
 def apply_rotary_emb(
     xq: torch.Tensor,
     xk: torch.Tensor,
@@ -137,6 +138,25 @@ def apply_rotary_emb(
     xq_out = (xq_ * freqs_cis).sum(5).flatten(3)
     xk_out = (xk_ * freqs_cis).sum(5).flatten(3)
     return xq_out.type_as(xq), xk_out.type_as(xk)
+
+
+
+def apply_rotary_emb2(
+    xq: torch.Tensor,
+    xk: torch.Tensor,
+    freqs_cis: torch.Tensor,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    xq_ = xq.reshape(*xq.shape[:-1], -1, 1, 2)  # B S H D -> B S H D/2 1 2
+    xk_ = xk.reshape(*xk.shape[:-1], -1, 1, 2)  # B S H D -> B S H D/2 1 2
+    freqs_cis = reshape_for_broadcast(
+        freqs_cis, xq_,
+    ).float()  # S D/2 2 2 -> 1 S 1 D/2 2 2
+    xq_out = (xq_ * freqs_cis).sum(5).flatten(3)
+    xk_out = (xk_ * freqs_cis).sum(5).flatten(3)
+    return xq_out.type_as(xq), xk_out.type_as(xk)
+
+
+
 
 
 def causal_mask(b, h, q_idx, kv_idx):

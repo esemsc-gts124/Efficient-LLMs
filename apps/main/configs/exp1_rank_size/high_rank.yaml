@@ -1,0 +1,72 @@
+# CONFIG FOR HIGH RANK - LOW VOCAB 40M MODEL TEST
+
+dump_dir: /rds/general/user/gts124/home/Efficient-LLMs/checkpoints/rank2GPU/high_rank
+name: "high_rank_2GPU"
+steps: 100000
+probe_freq: 2000
+seed: 777
+optim:
+    lr: 3e-4
+    warmup: 2000
+    lr_min_ratio: 0.000001
+    clip: 10.0
+
+distributed:
+    fsdp_type: full_shard
+    compile: true
+    model_dtype: bf16
+    matmul_allow_tf32: false
+    selective_activation_checkpointing: false
+    tp_size: 1
+
+model:
+    dim: 512
+    n_layers: 9
+    n_heads: 8
+    rank: 400
+
+data:
+    root_dir: /rds/general/user/gts124/ephemeral/fw_edu_10b_data/fineweb_edu_10bt_shuffled
+    sources:
+        fineweb_edu_10bt: 1.0
+    batch_size: 16
+    prefetch_size: 64
+    seq_len: 2048
+    n_views: 2
+    load_async: true
+    tokenizer: 
+        path: /rds/general/user/gts124/home/Efficient-LLMs/llama2_tokenizer # Low vocab size
+        name: bytes
+
+profiling:
+    run: true
+
+checkpoint:
+    dump:
+        every: 2000
+        keep: 1
+    eval:
+        every: 10000
+        keep: 10
+
+logging:
+    freq: 10
+    wandb:
+        project: RankTests_2GPU
+        entity: gts124-imperial-college-london
+        name: highrank_lowvocab_2gpu
+
+eval:
+    generator:
+        max_tokens: 8192
+        dtype: bf16
+        temperature: 1.0
+        top_p: 0.95
+    harness:
+        tasks:
+            - hellaswag
+            - piqa
+            - task: nq_open
+              num_fewshot: 5
+    validation:
+        max_steps: 1000
