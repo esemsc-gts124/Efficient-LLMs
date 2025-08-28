@@ -6,6 +6,7 @@ wandb
 crappy_scripts/*
 logs/*
 checkpoints/*
+final_checkpoints/*
 tokenizer/*
 data/*
 data_8gpu/*
@@ -13,3 +14,10 @@ data_8gpu/*
 run_jobs.sh
 data.tar.zst
 scripts/*
+ese_logs/*
+slurm_scripts/*
+final_logs/*
+gpu_logs/*
+extract_nll.py
+gg.py
+submit_job.sh
