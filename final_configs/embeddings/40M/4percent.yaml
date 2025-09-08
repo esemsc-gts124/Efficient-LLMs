@@ -3,7 +3,7 @@
 dump_dir: /scratch_dgxl/gts124/RDS/home/Efficient-LLMs/final_checkpoints/embeddings/40M_4percent_embeddings
 name: "40M_4percent_embeddings"
 steps: 38140
-probe_freq: 2000
+probe_freq: null
 seed: 777
 optim:
     lr: 3e-4
