@@ -250,39 +250,53 @@ def launch_eval(cfg: EvalArgs):
     model.eval()
     generator = PackedCausalTransformerGenerator(cfg.generator, model, tokenizer)
     
-    wrap = EvalHarnessLM(generator)
-    kwargs = asdict(cfg.harness)
-    if "verbosity" in kwargs: #  monkeypatch for verbosity typo
-        kwargs["verbosity"] = kwargs.pop("verbosity")
-    results = simple_evaluate(wrap, **kwargs)
+    # GEORGE: Only run task evals if tasks are specified (allows validation-only evals)
+    results = None
+    if cfg.harness and cfg.harness.tasks:
+        wrap = EvalHarnessLM(generator)
+        kwargs = asdict(cfg.harness)
+        if "verbosity" in kwargs: #  monkeypatch for verbosity typo
+            kwargs["verbosity"] = kwargs.pop("verbosity")
+        results = simple_evaluate(wrap, **kwargs)
+
     val_results =  None
     if cfg.validation:
         val_results = eval_on_val(generator, cfg.validation, train_cfg)
+
+    # Handle results saving for validation-only cases
     if get_global_rank() == 0:
-        with open(Path(cfg.dump_dir) / "results.json", "w") as f:
-            f.write(json.dumps(results))
-        logger.info(f"All evaluation results: {results['results']}")
+        if results is not None:
+            with open(Path(cfg.dump_dir) / "results.json", "w") as f:
+                f.write(json.dumps(results))
+            logger.info(f"All evaluation results: {results['results']}")
+
         if val_results is not None:
             with open(Path(cfg.dump_dir) / "validation.json", "w") as f:
                 f.write(json.dumps(val_results))
             logger.info(f"All validation results: {val_results}")
+
     if cfg.metric_log_dir and get_global_rank() == 0:
-        metric_log_path = Path(cfg.metric_log_dir) / "metrics.eval.jsonl"
+        if results is not None:
+            metric_log_path = Path(cfg.metric_log_dir) / "metrics.eval.jsonl"
+            logger.info(f"Writing metric logs to {metric_log_path}")
+            timestamp = {
+                "created_at": datetime.utcnow().isoformat(),
+            }
+            if cfg.global_step is not None:
+                timestamp["global_step"] = cfg.global_step
+            print(
+                json.dumps(timestamp | results["results"]),
+                file=open(metric_log_path, mode="a"),
+                flush=True,
+            )
 
-        logger.info(f"Writing metric logs to {metric_log_path}")
-        timestamp = {
-            "created_at": datetime.utcnow().isoformat(),
-        }
-        if cfg.global_step is not None:
-            timestamp["global_step"] = cfg.global_step
-        print(
-            json.dumps(timestamp | results["results"]),
-            file=open(metric_log_path, mode="a"),
-            flush=True,
-        )
-
-        val_log_path = Path(cfg.metric_log_dir) / "metrics.validation.jsonl"
         if val_results is not None:
+            val_log_path = Path(cfg.metric_log_dir) / "metrics.validation.jsonl"
+            timestamp = {
+                "created_at": datetime.utcnow().isoformat(),
+            }
+            if cfg.global_step is not None:
+                timestamp["global_step"] = cfg.global_step
             print(
                 json.dumps(timestamp | val_results),
                 file=open(val_log_path, mode="a"),
