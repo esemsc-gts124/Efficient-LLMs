@@ -66,16 +66,6 @@ def causal_mask(b, h, q_idx, kv_idx):
     return q_idx >= kv_idx
 
 
-# @dataclass
-# class LMTransformerArgs(BaseTransformerArgs):
-#     seed: int = 42
-#     rank: int = -1
-#     vocab_size: int = -1
-#     weight_tying: bool = False
-#     sliding_window: Optional[int] = None
-#     lora_rank: int = 8  # Rank of loras for weight sharing layers
-#     ffn_dim: int = None
-#     layer_groups: list  # Grouping for which layers share weights
 
 @dataclass
 class LMTransformerArgs(BaseTransformerArgs):
@@ -107,10 +97,6 @@ class FactorisedTiedLinear(nn.Module):
 
     def forward(self, x: torch.Tensor):
         intermediate = torch.matmul(x, self.tok_embeddings2.weight)
-        # intermediate = F.linear(x, self.tok_embeddings2.weight.t()) # change from matmul to linear
-
-        # logits = self.tok_embeddings1(intermediate)#torch.matmul(intermediate, self.tok_embeddings1.weight.t())
-        # logits = F.linear(intermediate, self.tok_embeddings1.weight) # change from matmul to linear
         logits = torch.matmul(intermediate, self.tok_embeddings1.weight.t())
         return logits
 
@@ -417,38 +403,6 @@ class LMTransformer(BaseTransformer):
                     ))
                     break
 
-        # # Define shared weights for attention
-        # self.shared_attention_weights = {
-        #     "wq": nn.Parameter(torch.zeros(args.n_heads * args.head_dim, args.dim)),
-        #     "wk": nn.Parameter(torch.zeros(args.n_kv_heads * args.head_dim, args.dim)),
-        #     "wv": nn.Parameter(torch.zeros(args.n_kv_heads * args.head_dim, args.dim)),
-        #     "wo": nn.Parameter(torch.zeros(args.dim, args.n_heads * args.head_dim))
-        # }
-
-        # # Define shared weights for feed-forward
-        # self.shared_ffn_weights = {
-        #     "w1": nn.Parameter(torch.zeros(args.ffn_dim, args.dim)),
-        #     "w2": nn.Parameter(torch.zeros(args.dim, args.ffn_dim)),
-        #     "w3": nn.Parameter(torch.zeros(args.ffn_dim, args.dim))
-        # }
-
-        # # Initialize shared weights
-        # init_std = args.dim ** (-0.5)
-        # for weight in self.shared_attention_weights.values():
-        #     nn.init.trunc_normal_(weight, mean=0.0, std=init_std, a=-3*init_std, b=3*init_std)
-        # for weight in self.shared_ffn_weights.values():
-        #     nn.init.trunc_normal_(weight, mean=0.0, std=init_std, a=-3*init_std, b=3*init_std)
-
-        # # Create layers with shared weights
-        # self.layers = nn.ModuleList([
-        #     TransformerBlockWithSharedWeights(
-        #         args,
-        #         self.shared_attention_weights,
-        #         self.shared_ffn_weights,
-        #         args.lora_rank
-        #     )
-        #     for _ in range(args.n_layers)
-        # ])
 
     def forward(
         self,
