@@ -1,5 +1,5 @@
-dump_dir: /home/jovyan/workspace/efficient_llms_dumps/500m_exps/baseline
-name: Baseline
+dump_dir: /home/jovyan/workspace/efficient_llms_dumps/250m_exps/grouped_sharing
+name: Grouped_Sharing_250m
 steps: 42000
 probe_freq: 5000
 seed: 777
@@ -18,13 +18,17 @@ distributed:
     selective_activation_checkpointing: false
     tp_size: 1
 model:
-    dim: 1536
-    ffn_dim_multiplier: 0.75
-    n_layers: 24
+    dim: 1024
+    ffn_dim_multiplier: 1.125
+    n_layers: 20
     n_heads: 16
     n_kv_heads: 8
-    attn_sharing: false
-    head_sharing: false
+    attn_sharing: true
+    head_sharing: true
+    qkv_sharing: null
+    grouping: 4
+    rank: 256
+    two_step: false
 data:
     root_dir: /home/jovyan/workspace/Efficient-LLMs/data_8gpu
     sources:
