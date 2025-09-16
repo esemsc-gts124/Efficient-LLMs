@@ -249,6 +249,47 @@ def launch_eval(cfg: EvalArgs):
     logger.info("Model loaded")
     model.eval()
     generator = PackedCausalTransformerGenerator(cfg.generator, model, tokenizer)
+    #S initialize or reuse wandb on rank 0: prefer reusing an existing run
+    wandb_run = None
+    wandb_created = False
+    if get_global_rank() == 0:
+        try:
+            import wandb
+
+            #S reuse the training run 
+            existing = getattr(wandb, "run", None)
+            if existing is not None:
+                wandb_run = existing
+                logger.info("Reusing existing wandb run")
+            #S Otherwise, if cfg.wandb provided, initialize a new run from that config
+            elif getattr(cfg, "wandb", None):
+                wb_kwargs = {}
+                if isinstance(cfg.wandb, dict):
+                    wb_kwargs.update(cfg.wandb)
+                else:
+                    try:
+                        maybe = getattr(cfg, "wandb")
+                        for k in ["project", "name", "entity", "group", "tags"]:
+                            if hasattr(maybe, k):
+                                wb_kwargs[k] = getattr(maybe, k)
+                    except Exception:
+                        wb_kwargs["project"] = str(cfg.wandb)
+
+                #S make sure the lengths make sense 
+                for key in ("project", "name"):
+                    if key in wb_kwargs and wb_kwargs[key] is not None:
+                        s = str(wb_kwargs[key])
+                        if len(s) > 120:
+                            wb_kwargs[key] = s[:116] + "..."
+
+                if not wb_kwargs and isinstance(cfg.wandb, str):
+                    wb_kwargs["project"] = cfg.wandb
+
+                wandb_run = wandb.init(**wb_kwargs) if wb_kwargs else wandb.init()
+                wandb_created = True
+                logger.info("Initialized new wandb run for eval")
+        except Exception as e:
+            logger.warning(f"Failed to init/reuse wandb: {e}")
     
     # GEORGE: Only run task evals if tasks are specified (allows validation-only evals)
     results = None
@@ -269,11 +310,29 @@ def launch_eval(cfg: EvalArgs):
             with open(Path(cfg.dump_dir) / "results.json", "w") as f:
                 f.write(json.dumps(results))
             logger.info(f"All evaluation results: {results['results']}")
+            #S log existing eval metrics to wandb
+            if wandb_run is not None:
+                try:
+                    wandb.log({f"eval/{k}": float(v) if isinstance(v, (int, float)) else v for k, v in results["results"].items()})
+                except Exception as e:
+                    logger.warning(f"Failed to log eval results to wandb: {e}")
 
         if val_results is not None:
             with open(Path(cfg.dump_dir) / "validation.json", "w") as f:
                 f.write(json.dumps(val_results))
             logger.info(f"All validation results: {val_results}")
+            #S log existing validation metrics to wandb
+            if wandb_run is not None:
+                try:
+                    flat = {}
+                    for name, metrics in val_results.items():
+                        for k, v in metrics.items():
+                            key = f"validation/{name}/{k}"
+                            flat[key] = float(v) if isinstance(v, (int, float)) else v
+                    if flat:
+                        wandb.log(flat)
+                except Exception as e:
+                    logger.warning(f"Failed to log validation metrics to wandb: {e}")
 
     if cfg.metric_log_dir and get_global_rank() == 0:
         if results is not None:
@@ -304,6 +363,12 @@ def launch_eval(cfg: EvalArgs):
             )
     
     del generator
+    #S finish wandb run only if this process created it; don't finish a run started by training
+    if wandb_run is not None and wandb_created and get_global_rank() == 0:
+        try:
+            wandb_run.finish()
+        except Exception:
+            pass
 
 
 def main():
