@@ -620,6 +620,11 @@ def train(args: TrainArgs):
                     )
                 )
                 eval_args.metric_log_dir = args.dump_dir
+
+                #S make sure we pass the wandb config to the eval
+                if get_is_master() and getattr(args, "logging", None) and getattr(args.logging, "wandb", None) is not None:
+                    eval_args.wandb = deepcopy(args.logging.wandb)
+
                 if args.async_eval_gpus is None:
                     launch_eval(eval_args)
                 elif get_is_master():
