@@ -1,8 +1,8 @@
 # NOTE TO SANAE - THE NUMBER OF STEPS HERE IS CONFIGURED TO REACH 10B TOKENS ON 8 GPU'S
 
 
-dump_dir: /scratch_dgxl/gts124/RDS/home/Efficient-LLMs/final_checkpoints/embeddings/100M_r32_embeddings
-name: "100M_r32_embeddings"
+dump_dir: /fsx-scaling/sanaelotfi/weight_shared_llms/checkpoints/final_runs/embeddings/100M_r64_embeddings
+name: "100M_r64_embeddings"
 steps: 38150
 probe_freq: null
 seed: 777
@@ -32,7 +32,7 @@ model:
     lora_rank: 0
 
 data:
-    root_dir: /scratch_dgxl/gts124/RDS/home/fwedu_10bt
+    root_dir: /fsx-checkpoints/sanaelotfi/data
     sources:
         fineweb_edu_10bt_shuffled: 1.0
     batch_size: 16
@@ -41,7 +41,7 @@ data:
     n_views: 2
     load_async: true
     tokenizer: 
-        path: /scratch_dgxl/gts124/RDS/home/Efficient-LLMs/llama3_tokenizer/original/tokenizer.model
+        path: /fsx-checkpoints/sanaelotfi/tokenizers/llama3_tokenizer/original/tokenizer.model
         name: tiktoken
 
 profiling:
@@ -53,14 +53,14 @@ checkpoint:
         keep: 1
     eval:
         every: 763
-        keep: 50
+        keep: 1
 
 logging:
     freq: 100
     wandb:
-        project: MSc_Results
-        entity: gts124-imperial-college-london
-        name: 100M_r32_embeddings
+        project: final_runs_embeddings
+        entity: sanaelotfi
+        name: 100M_r64_embeddings
 
 eval:
     validation:
