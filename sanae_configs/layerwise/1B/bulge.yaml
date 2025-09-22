@@ -1,7 +1,6 @@
 # NOTE TO SANAE - THE NUMBER OF STEPS HERE IS CONFIGURED TO REACH 10B TOKENS ON 8 GPU'S
 
-
-dump_dir: /scratch_dgxl/gts124/RDS/home/Efficient-LLMs/final_checkpoints/layerwise/1B_bulge_layerwise
+dump_dir: /fsx-scaling/sanaelotfi/weight_shared_llms/checkpoints/final_runs/layerwise/1B_bulge_layerwise
 name: "1B_bulge_layerwise"
 steps: 152500
 probe_freq: null
@@ -32,7 +31,7 @@ model:
     lora_rank: 0
 
 data:
-    root_dir: /scratch_dgxl/gts124/RDS/home/fwedu_10bt
+    root_dir: /fsx-checkpoints/sanaelotfi/data
     sources:
         fineweb_edu_10bt_shuffled: 1.0
     batch_size: 8
@@ -41,7 +40,7 @@ data:
     n_views: 2
     load_async: true
     tokenizer: 
-        path: /scratch_dgxl/gts124/RDS/home/Efficient-LLMs/llama3_tokenizer/original/tokenizer.model
+        path: /fsx-checkpoints/sanaelotfi/tokenizers/llama3_tokenizer/original/tokenizer.model
         name: tiktoken
 
 profiling:
@@ -53,13 +52,13 @@ checkpoint:
         keep: 1
     eval:
         every: 3050
-        keep: 50
+        keep: 1
 
 logging:
     freq: 100
     wandb:
-        project: MSc_Results
-        entity: gts124-imperial-college-london
+        project: layerwise
+        entity: sanaelotfi
         name: 1B_bulge_layerwise
 
 eval:

@@ -1,7 +1,7 @@
 # NOTE TO SANAE - THE NUMBER OF STEPS HERE IS CONFIGURED TO REACH 10B TOKENS ON 8 GPU'S
 
 
-dump_dir: /fsx-scaling/sanaelotfi/weight_shared_llms/checkpoints/final_runs/embeddings/100M_9%_embeddings
+dump_dir: /fsx-scaling/sanaelotfi/weight_shared_llms/checkpoints/final_runs/embeddings/100M_9%_embeddings_2
 name: "100M_9%_embeddings"
 steps: 38150
 probe_freq: null
