@@ -1,5 +1,5 @@
 dump_dir: /home/jovyan/workspace/efficient_llms_dumps/1b_exps/rank_512
-name: Rank_384
+name: Rank_512
 steps: 42000
 probe_freq: 5000
 seed: 777

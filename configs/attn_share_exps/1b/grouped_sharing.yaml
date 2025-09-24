@@ -1,5 +1,5 @@
 dump_dir: /home/jovyan/workspace/efficient_llms_dumps/1b_exps/grouped_sharing
-name: Grouped_Sharing
+name: Grouped_Sharing_1b
 steps: 42000
 probe_freq: 5000
 seed: 777

@@ -1,5 +1,5 @@
 dump_dir: /home/jovyan/workspace/efficient_llms_dumps/1b_exps/qkv_sharing
-name: QKV_Sharing
+name: QKV_Sharing_1b
 steps: 10500
 probe_freq: 5000
 seed: 777

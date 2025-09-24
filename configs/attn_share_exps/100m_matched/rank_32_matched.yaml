@@ -1,5 +1,5 @@
-dump_dir: /home/jovyan/workspace/efficient_llms_dumps/1b_exps/baseline
-name: Baseline_1B
+dump_dir: /home/jovyan/workspace/efficient_llms_dumps/100m_exps/rank_32_matched_0
+name: rank_32_100m_matched
 steps: 42000
 probe_freq: 5000
 seed: 777
@@ -18,9 +18,9 @@ distributed:
     selective_activation_checkpointing: false
     tp_size: 1
 model:
-    dim: 1536
-    ffn_dim_multiplier: 1.125
-    n_layers: 36
+    dim: 512
+    ffn_dim_multiplier: 2.0
+    n_layers: 20
     n_heads: 16
     n_kv_heads: 8
     attn_sharing: false
