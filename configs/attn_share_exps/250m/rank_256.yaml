@@ -1,5 +1,5 @@
-dump_dir: /home/jovyan/workspace/efficient_llms_dumps/500m_exps/rank_256
-name: Rank_256
+dump_dir: /fsx-scaling/sanaelotfi/weight_shared_llms/checkpoints/final_runs/attn_sharing/250m_exps/rank_256
+name: Rank_256_250m
 steps: 42000
 probe_freq: 5000
 seed: 777
@@ -30,7 +30,7 @@ model:
     rank: 256
     two_step: false
 data:
-    root_dir: /home/jovyan/workspace/Efficient-LLMs/data_8gpu
+    root_dir: /fsx-checkpoints/sanaelotfi/data
     sources:
         fineweb_edu_10bt_shuffled: 1.0
     batch_size: 16
@@ -40,7 +40,7 @@ data:
     load_async: true
     tokenizer:
         name: sp
-        path: /home/jovyan/workspace/Efficient-LLMs/tokenizer/llama2/tokenizer.model
+        path: /fsx-checkpoints/sanaelotfi/tokenizers/llama2_tokenizer/tokenizer.model
 profiling:
     run: true
 checkpoint:
@@ -49,11 +49,13 @@ checkpoint:
         keep: 1
     eval:
         every: 840
-        keep: 50
+        keep: 1
 logging:
     freq: 500
     wandb:
-        project: 40m_baseline
-        entity: muchanem
-        name: 40M_DDP_run_0
-eval: null
+        project: attn_sharing
+        entity: sanaelotfi
+        name: Rank_256_250m
+eval:
+    validation:
+        max_steps: 1000

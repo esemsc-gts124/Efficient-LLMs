@@ -170,9 +170,7 @@ def read_jsonl(
         offset=offset,
         current_iter=current_iter,
     )
-    # Force UTF-8 decoding to avoid locale-dependent ASCII fallback causing UnicodeDecodeError
-    # If you encounter rare bad bytes, change errors="strict" to "replace" or "ignore".
-    with open(file_path, "r", encoding="utf-8", errors="strict") as file:
+    with open(file_path, "r") as file:
         file.seek(position)
         while line := file.readline():
             current_line += 1
@@ -186,27 +184,7 @@ def read_jsonl(
                     offset=offset,
                     current_iter=current_iter,
                 )
-                try:
-                    obj = json.loads(line)
-                except json.JSONDecodeError as e:
-                    logger.warning(
-                        "Skipping malformed JSON line in %s at byte %d (iter=%d): %s",
-                        file_path,
-                        file.tell(),
-                        current_iter,
-                        str(e),
-                    )
-                    continue
-                except Exception as e:  # Catch-all to avoid hard crash on unexpected issues
-                    logger.warning(
-                        "Unexpected error parsing line in %s at byte %d (iter=%d): %s",
-                        file_path,
-                        file.tell(),
-                        current_iter,
-                        repr(e),
-                    )
-                    continue
-                yield obj, state
+                yield json.loads(line), state
 
 
 def loop_on_jsonl(
