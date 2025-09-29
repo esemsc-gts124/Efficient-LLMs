@@ -1,4 +1,4 @@
-dump_dir: /fsx-scaling/sanaelotfi/weight_shared_llms/checkpoints/final_runs/attn_sharing/250m_exps/rank_64
+dump_dir: /fsx-scaling/sanaelotfi/weight_shared_llms/checkpoints/final_runs/attn_sharing/250m_exps/rank_64_250m_latest
 name: rank_64_250m
 steps: 42000
 probe_freq: 5000

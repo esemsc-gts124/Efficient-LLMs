@@ -1,14 +1,7 @@
-<<<<<<< HEAD
-dump_dir: /fsx-scaling/sanaelotfi/weight_shared_llms/checkpoints/final_runs/attn_sharing/1b_exps/rank_512
-name: Rank_512_1b
-steps: 84000
-probe_freq: null
-=======
-dump_dir: /home/jovyan/workspace/efficient_llms_dumps/1b_exps/rank_512
-name: Rank_512
+dump_dir: /fsx-scaling/sanaelotfi/weight_shared_llms/checkpoints/final_runs/attn_sharing/100m_shared/qk_matched_0
+name: QK_Sharing_100m_matched
 steps: 42000
 probe_freq: 5000
->>>>>>> e131eb0620498b5a088e1e4f6a9b80006ee64eff
 seed: 777
 optim:
     lr: 3e-4
@@ -25,22 +18,18 @@ distributed:
     selective_activation_checkpointing: false
     tp_size: 1
 model:
-    dim: 1536
-    ffn_dim_multiplier: 1.125
-    n_layers: 36
+    dim: 768
+    ffn_dim_multiplier: 1.25
+    n_layers: 13
     n_heads: 16
     n_kv_heads: 8
-    attn_sharing: true
-    head_sharing: true
-    qkv_sharing: null
-    grouping: 1
-    rank: 512
-    two_step: false
+    attn_sharing: false
+    head_sharing: false
 data:
     root_dir: /fsx-checkpoints/sanaelotfi/data
     sources:
         fineweb_edu_10bt_shuffled: 1.0
-    batch_size: 8
+    batch_size: 16
     prefetch_size: 32
     seq_len: 2048
     n_views: 2
@@ -52,17 +41,17 @@ profiling:
     run: true
 checkpoint:
     dump:
-        every: 8400
+        every: 4200
         keep: 1
     eval:
-        every: 1680
+        every: 840
         keep: 1
 logging:
-    freq: 1000
+    freq: 500
     wandb:
         project: attn_sharing
         entity: sanaelotfi
-        name: Rank_512_1b
+        name: QK_Sharing_100m_matched
 eval:
     validation:
         max_steps: 1000

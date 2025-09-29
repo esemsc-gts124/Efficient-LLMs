@@ -1,5 +1,5 @@
-dump_dir: /fsx-scaling/sanaelotfi/weight_shared_llms/checkpoints/final_runs/attn_sharing/100m_exps/qkv_heads_2step_0
-name: QKV_and_Head_Sharing_2Step_100m
+dump_dir: /fsx-scaling/sanaelotfi/weight_shared_llms/checkpoints/final_runs/attn_sharing/100m_exps/qkv_heads_2step_0_full_validation
+name: QKV_and_Head_Sharing_2Step_100m_full_validation
 steps: 42000
 probe_freq: 5000
 seed: 777
@@ -56,9 +56,9 @@ checkpoint:
 logging:
     freq: 500
     wandb:
-        project: attn_sharing
+        project: attn_sharing_fixed
         entity: sanaelotfi
-        name: QKV_and_Head_Sharing_2Step_100m
+        name: QKV_and_Head_Sharing_2Step_100m_full_validation
 eval:
     validation:
-        max_steps: 1000
+        max_steps: null
