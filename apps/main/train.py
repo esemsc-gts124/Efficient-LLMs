@@ -1,17 +1,16 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # This software may be used and distributed according to the terms of the Llama 2 Community License Agreement.
 
-from copy import deepcopy
+from collections import defaultdict
 import gc
 import logging
 import os
 import sys
-import time
 from contextlib import ExitStack
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from pathlib import Path
 from timeit import default_timer as timer
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import numpy as np
 from omegaconf import OmegaConf
@@ -23,13 +22,15 @@ from torch.optim import lr_scheduler
 from torch.distributed.checkpoint.stateful import Stateful
 from torch.distributed._tensor import DTensor
 
-from lingua.args import dataclass_from_dict, dump_config, flatten_dict
+from lingua.args import dump_config, flatten_dict
 from lingua.checkpoint import CheckpointArgs, CheckpointManager, load_from_checkpoint
 from lingua.data import (
     DataArgs,
     PackTokensState,
     build_dataloader_from_args,
+    init_choice_state,
     init_dataloader_state_from_args,
+    setup_sources,
 )
 from lingua.distributed import (
     DistributedArgs,
@@ -42,7 +43,6 @@ from lingua.distributed import (
     parallelize_model,
     setup_env,
     setup_torch_distributed,
-    clean_env,
     requeue_slurm_job,
     check_model_value_range,
 )
@@ -65,7 +65,6 @@ from apps.main.transformer import (
     get_no_recompute_ops,
 )
 from lingua.probe import AutoProbeD
-from lingua.stool import StoolArgs, launch_job
 
 import wandb
 
@@ -207,6 +206,138 @@ def set_preemption_flag(signum, frame):
     logger.warning("Signal handler called with signal " + str(signum))
     logger.warning("Preemption ! checkpointing asap and exiting.")
     preemption_flag["flag"] = True
+
+
+def _maybe_get(cfg: Any, key: str, default=None):
+    if cfg is None:
+        return default
+    if isinstance(cfg, dict):
+        return cfg.get(key, default)
+    return getattr(cfg, key, default)
+
+
+def run_validation_eval(
+    model: torch.nn.Module,
+    tokenizer,
+    train_args: TrainArgs,
+    eval_cfg: Optional[Any],
+):
+    """Run a simple validation pass using forward losses over validation sources."""
+    val_cfg = _maybe_get(eval_cfg, "validation")
+    if val_cfg is None:
+        logger.warning("Validation config missing in eval settings; skipping eval.")
+        return {}
+
+    use_train_sources = _maybe_get(val_cfg, "use_val_from_train_src", True)
+    val_sources = list(_maybe_get(val_cfg, "sources", []))
+    if val_sources is None:
+        val_sources = []
+    val_root_dir = _maybe_get(val_cfg, "root_dir") or train_args.data.root_dir
+    if val_root_dir is None:
+        logger.warning("Validation root_dir is not set; skipping eval.")
+        return {}
+
+    sources = {}
+    for src in val_sources:
+        sources[src] = 1.0
+    if use_train_sources:
+        for src in train_args.data.sources:
+            sources[src] = 1.0
+
+    if not sources:
+        logger.warning("No validation sources configured; skipping eval.")
+        return {}
+
+    max_steps = _maybe_get(val_cfg, "max_steps")
+    multi_state = init_choice_state(
+        val_root_dir,
+        sources,
+        train_args.data.seed,
+        get_global_rank(),
+        get_world_size(),
+        "*.val.jsonl",
+    )
+    path_to_iter = setup_sources(multi_state)
+
+    # Keep track of whether we should restore training mode afterwards.
+    was_training = model.training
+    model.eval()
+
+    add_bos = train_args.data.add_bos
+    add_eos = train_args.data.add_eos
+    max_seq = train_args.data.seq_len
+
+    results = {}
+    with torch.no_grad():
+        for src, jsonl_iterator in path_to_iter.items():
+            metrics = defaultdict(list)
+            logger.info(f"Running validation on {src} ...")
+            for step, (content, state) in enumerate(jsonl_iterator):
+                if state["current_iter"] > 0:
+                    break
+                if max_steps is not None and step >= max_steps:
+                    break
+
+                text = content.get("text") or content.get("content")
+                if not text:
+                    continue
+
+                tokens = tokenizer.encode(text, add_bos=add_bos, add_eos=add_eos)
+                if len(tokens) < 2:
+                    continue
+
+                token_tensor = torch.tensor(tokens, dtype=torch.long, device="cuda")
+
+                sample_loss = 0.0
+                token_count = 0
+                for start in range(0, len(tokens) - 1, max_seq):
+                    chunk = token_tensor[start : start + max_seq + 1]
+                    if chunk.numel() < 2:
+                        continue
+                    input_ids = chunk[:-1].unsqueeze(0)
+                    labels = chunk[1:].unsqueeze(0)
+                    loss = model(input_ids, labels)
+                    num_tokens = labels.numel()
+                    sample_loss += loss.item() * num_tokens
+                    token_count += num_tokens
+
+                if token_count == 0:
+                    continue
+
+                metrics["nll"].append(sample_loss)
+                metrics["nll_per_token"].append(sample_loss / token_count)
+                if len(text) > 0:
+                    metrics["nll_per_char"].append(sample_loss / len(text))
+                metrics["avg_seqlen"].append(token_count)
+
+            if not metrics:
+                continue
+
+            aggregated = {}
+            for key, values in metrics.items():
+                if not values:
+                    continue
+                aggregated[key] = sum(values) / len(values)
+
+            if not aggregated:
+                continue
+
+            aggregated = {k: float(v) for k, v in aggregated.items()}
+            aggregated.update(dist_mean_dict(aggregated))
+
+            name = os.path.basename(src)
+            if name in results:
+                logger.warning(
+                    f"Duplicate validation source name {name}, renaming to {name}_1"
+                )
+                name = f"{name}_1"
+            results[name] = aggregated
+            logger.info(f"Validation on {src} done. Metrics: {aggregated}")
+
+    if was_training:
+        model.train()
+
+    return results
 
 
 def every_n_steps(train_state, freq, acc_step=None, acc_freq=None):
@@ -544,46 +675,27 @@ def train(args: TrainArgs):
             if args.eval is not None and every_n_steps(
                 train_state, args.checkpoint.eval.every, acc_step=0
             ):
-                from apps.main.eval import (
-                    launch_eval,
-                    EVAL_FOLDER_NAME,
-                    EvalArgs,
-                )
-
-                eval_args = dataclass_from_dict(EvalArgs, args.eval)
-
-                eval_args.global_step = train_state.step
-                eval_args.ckpt_dir = str(checkpoint.existing_saves[-1])
-                eval_args.dump_dir = str(
-                    os.path.join(
-                        args.dump_dir,
-                        "evals",
-                        EVAL_FOLDER_NAME.format(train_state.step),
+                if args.async_eval_gpus:
+                    logger.warning(
+                        "Async eval via external jobs is not supported in the inline eval path; running local eval instead."
                     )
-                )
-                eval_args.metric_log_dir = args.dump_dir
 
-                #S make sure we pass the wandb config to the eval
-                if get_is_master() and getattr(args, "logging", None) and getattr(args.logging, "wandb", None) is not None:
-                    eval_args.wandb = deepcopy(args.logging.wandb)
+                eval_results = run_validation_eval(model, tokenizer, args, args.eval)
 
-                if args.async_eval_gpus is None:
-                    launch_eval(eval_args)
-                elif get_is_master():
-                    if wandb.run is not None and args.logging.wandb is not None:
-                        eval_args.wandb = deepcopy(args.logging.wandb)
-                    assert args.async_eval_gpus > 0
-                    logger.info(f"Launching evals on {args.async_eval_gpus} gpus")
-                    with clean_env():
-                        launch_job(
-                            StoolArgs(
-                                asdict(eval_args),
-                                script="apps.main.eval",
-                                copy_code=False,
-                                nodes=args.async_eval_gpus // 8,
-                                qos="lowest",
-                            )
-                        )
+                if eval_results:
+                    flat_metrics = {}
+                    for name, metrics in eval_results.items():
+                        for key, value in metrics.items():
+                            flat_metrics[f"validation/{name}/{key}"] = float(value)
+                    flat_metrics["validation/global_step"] = float(train_state.step)
+
+                    if get_is_master():
+                        metric_logger.log(flat_metrics)
+                        if wandb.run is not None:
+                            try:
+                                wandb.log(flat_metrics, step=train_state.step)
+                            except Exception as exc:
+                                logger.warning(f"Failed to log validation metrics to wandb: {exc}")
 
             if preemption_flag["flag"]:
                 if not saved:
