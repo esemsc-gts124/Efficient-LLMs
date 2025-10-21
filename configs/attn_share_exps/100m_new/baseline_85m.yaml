@@ -1,0 +1,57 @@
+dump_dir: /fsx-scaling/sanaelotfi/weight_shared_llms/checkpoints/final_runs/attn_sharing/new_100m_exps/baseline_85m
+name: Baseline_85M
+steps: 42000
+probe_freq: 5000
+seed: 777
+optim:
+    lr: 3e-4
+    warmup: 2000
+    lr_min_ratio: 1.0
+    clip: 10.0
+distributed:
+    fsdp_type: no_shard
+    dp_shard: 1
+    dp_replicate: 8
+    compile: true
+    model_dtype: bf16
+    matmul_allow_tf32: false
+    selective_activation_checkpointing: false
+    tp_size: 1
+model:
+    dim: 768
+    ffn_dim_multiplier: 1.125
+    n_layers: 13
+    n_heads: 16
+    n_kv_heads: 1
+    attn_sharing: false
+    head_sharing: false
+data:
+    root_dir: /fsx-checkpoints/sanaelotfi/data
+    sources:
+        fineweb_edu_10bt_shuffled: 1.0
+    batch_size: 16
+    prefetch_size: 32
+    seq_len: 2048
+    n_views: 2
+    load_async: true
+    tokenizer:
+        name: sp
+        path: /fsx-checkpoints/sanaelotfi/tokenizers/llama2_tokenizer/tokenizer.model
+profiling:
+    run: true
+checkpoint:
+    dump:
+        every: 5000
+        keep: 1
+    eval:
+        every: 840
+        keep: 1
+logging:
+    freq: 500
+    wandb:
+        project: new_att_sharing_runs
+        entity: sanaelotfi
+        name: Baseline_85M
+eval:
+    validation:
+        max_steps: null
