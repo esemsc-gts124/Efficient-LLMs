@@ -21,7 +21,7 @@ model:
     dim: 768
     ffn_dim_multiplier: 1.125
     n_layers: 14
-    n_heads: 16
+    n_heads: 8
     n_kv_heads: 8
     attn_sharing: true
     head_sharing: true
