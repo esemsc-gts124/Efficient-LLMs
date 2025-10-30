@@ -1,8 +1,8 @@
 # NOTE TO SANAE - THE NUMBER OF STEPS HERE IS CONFIGURED TO REACH 10B TOKENS ON 8 GPU'S
 
 
-dump_dir: /fsx-scaling/sanaelotfi/weight_shared_llms/checkpoints/final_runs/layerwise/mark_idea_100m_baseline
-name: "100M_sequence_layerwise"
+dump_dir: /fsx-scaling/sanaelotfi/weight_shared_llms/checkpoints/final_runs/layerwise/mark_idea_100m_shared
+name: "100M_mark_shared
 steps: 38150
 probe_freq: null
 seed: 777
