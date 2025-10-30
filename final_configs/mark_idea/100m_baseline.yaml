@@ -2,7 +2,7 @@
 
 
 dump_dir: /fsx-scaling/sanaelotfi/weight_shared_llms/checkpoints/final_runs/layerwise/mark_idea_100m_baseline
-name: "100M_sequence_layerwise"
+name: "100M_mark_baseline
 steps: 38150
 probe_freq: null
 seed: 777
