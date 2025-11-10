@@ -40,6 +40,7 @@ from lingua.distributed import (
     get_device_mesh,
     get_is_master,
     get_world_size,
+    get_global_rank,
     parallelize_model,
     setup_env,
     setup_torch_distributed,
@@ -129,14 +130,16 @@ def validate_train_args(args: TrainArgs, output_size: int):
     if args.model.vocab_size < 0:
         logger.info(f"Setting model output size to {output_size}")
         args.model.vocab_size = output_size
-    assert (
-        args.model.vocab_size == output_size
-    ), "Vocab size should be the same as output size"
+    assert args.model.vocab_size == output_size, (
+        "Vocab size should be the same as output size"
+    )
 
     assert args.dump_dir, "Dump dir not set"
 
     if args.checkpoint.path is None:
-        logger.info(f"Setting checkpoint path to {str(Path(args.dump_dir) / 'checkpoints')}")
+        logger.info(
+            f"Setting checkpoint path to {str(Path(args.dump_dir) / 'checkpoints')}"
+        )
         args.checkpoint.path = str(Path(args.dump_dir) / "checkpoints")
 
     for source in args.data.sources:
@@ -180,23 +183,23 @@ def validate_train_args(args: TrainArgs, output_size: int):
             "Tensor parallelism has not been tested for a while, use at your own risk"
         )
 
-    assert (
-        args.probe_freq != args.profiling.mem_steps
-    ), "Don't profile during probe step"
-    assert (
-        args.probe_freq != args.profiling.profile_steps
-    ), "Don't profile during probe step"
+    assert args.probe_freq != args.profiling.mem_steps, (
+        "Don't profile during probe step"
+    )
+    assert args.probe_freq != args.profiling.profile_steps, (
+        "Don't profile during probe step"
+    )
 
     if args.logging.wandb is not None:
         args.logging.wandb.name = args.name
 
     if args.probe_freq is not None:
-        assert (
-            args.distributed.tp_size == 1
-        ), "Probing not supported with tensor parallelism"
-        assert (
-            args.distributed.selective_activation_checkpointing is False
-        ), "Probing not supported with selective activation checkpointing"
+        assert args.distributed.tp_size == 1, (
+            "Probing not supported with tensor parallelism"
+        )
+        assert args.distributed.selective_activation_checkpointing is False, (
+            "Probing not supported with selective activation checkpointing"
+        )
 
 
 preemption_flag = dict(flag=False)
@@ -372,7 +375,10 @@ def train(args: TrainArgs):
         dp_degree = dp_mesh.size()
         dp_rank = dp_mesh.get_local_rank()
         if args.distributed.dp_shard > 1:
-            dp_rank = dp_rank * world_mesh["dp_shard"].size() + world_mesh["dp_shard"].get_local_rank()
+            dp_rank = (
+                dp_rank * world_mesh["dp_shard"].size()
+                + world_mesh["dp_shard"].get_local_rank()
+            )
             dp_degree *= world_mesh["dp_shard"].size()
 
         logger.info(f"Running on dp rank : {dp_rank}")
@@ -407,8 +413,10 @@ def train(args: TrainArgs):
 
         if args.checkpoint.init_ckpt_path:
             logger.info(f"Loading initial model from {args.checkpoint.init_ckpt_path}")
-            load_from_checkpoint(args.checkpoint.init_ckpt_path, model, model_key="model") # Put model_key="" if its directly the model checkpoint
-            model.rope_embeddings.reset_parameters() # For RoPe initialization since it's a buffer it might not be loaded
+            load_from_checkpoint(
+                args.checkpoint.init_ckpt_path, model, model_key="model"
+            )  # Put model_key="" if its directly the model checkpoint
+            model.rope_embeddings.reset_parameters()  # For RoPe initialization since it's a buffer it might not be loaded
         else:
             with torch.random.fork_rng(devices=[torch.cuda.current_device()]):
                 torch.manual_seed(args.model.seed)
@@ -419,7 +427,7 @@ def train(args: TrainArgs):
 
         logger.info(f"Model size: {model_param_count:,} total parameters")
         args.parameter_count = model_param_count
-        
+
         gpu_memory_monitor = GPUMemoryMonitor("cuda")
         logger.info(
             f"GPU capacity: {gpu_memory_monitor.device_name} ({gpu_memory_monitor.device_index}) "
@@ -518,9 +526,9 @@ def train(args: TrainArgs):
                 # Here we do a fake forward and backward pass on a smaller
                 # batch size to avoid OOM
                 # This assumes the model has no stateful layers (batch norm..)
-                assert (
-                    next(model.parameters()).grad is None
-                ), "Can't probe model if grads are not reset"
+                assert next(model.parameters()).grad is None, (
+                    "Can't probe model if grads are not reset"
+                )
 
                 with probe:
                     probe.metadata = {
@@ -540,9 +548,9 @@ def train(args: TrainArgs):
                     # We zero grads to cancel this fake step
                     optimizer.zero_grad()
 
-                assert (
-                    next(model.parameters()).grad is None
-                ), "Probe model shouldn't have grads at this point"
+                assert next(model.parameters()).grad is None, (
+                    "Probe model shouldn't have grads at this point"
+                )
 
             loss = model(input_ids, labels)
 
@@ -565,7 +573,9 @@ def train(args: TrainArgs):
                 )
 
                 grad_norm = (
-                    grad_norm.full_tensor() if isinstance(grad_norm, DTensor) else grad_norm
+                    grad_norm.full_tensor()
+                    if isinstance(grad_norm, DTensor)
+                    else grad_norm
                 ).item()
 
                 optimizer.step()
@@ -649,7 +659,7 @@ def train(args: TrainArgs):
                 logger.info(
                     f"step: {train_state.step}"
                     f"  acc: {train_state.acc_step}"
-                    f"  loss: {round(loss.item(),4):>7}"
+                    f"  loss: {round(loss.item(), 4):>7}"
                     f"  grad: {grad_norm:.2e}"
                     f"  flops: {FLOPS:.2e}"
                     f"  wps: {wps:.2e}"
@@ -657,7 +667,7 @@ def train(args: TrainArgs):
                     f"  data: {data_load_time:>5}"
                     f"  lr: {curr_lr:.2e}"
                     f"  mem: {gpu_mem_stats.max_active_pct:.0f}%"
-                    f"  pow: {gpu_mem_stats.power_draw/1000} W"
+                    f"  pow: {gpu_mem_stats.power_draw / 1000} W"
                 )
 
             saved = False
@@ -687,7 +697,8 @@ def train(args: TrainArgs):
                     for name, metrics in eval_results.items():
                         for key, value in metrics.items():
                             flat_metrics[f"validation/{name}/{key}"] = float(value)
-                    flat_metrics["validation/global_step"] = float(train_state.step)
+                    flat_metrics["validation/global_step"] = train_state.step
+                    flat_metrics["global_step"] = train_state.step
 
                     if get_is_master():
                         metric_logger.log(flat_metrics)
@@ -695,7 +706,9 @@ def train(args: TrainArgs):
                             try:
                                 wandb.log(flat_metrics, step=train_state.step)
                             except Exception as exc:
-                                logger.warning(f"Failed to log validation metrics to wandb: {exc}")
+                                logger.warning(
+                                    f"Failed to log validation metrics to wandb: {exc}"
+                                )
 
             if preemption_flag["flag"]:
                 if not saved:
