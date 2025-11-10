@@ -1,0 +1,67 @@
+# NOTE TO SANAE - THE NUMBER OF STEPS HERE IS CONFIGURED TO REACH 10B TOKENS ON 8 GPU'S
+
+
+dump_dir: /fsx-scaling/sanaelotfi/weight_shared_llms/checkpoints/final_runs/redundant_embeds/500M_45%
+name: "500M_45%"
+steps: 38150
+probe_freq: null
+seed: 777
+optim:
+    lr: 3e-4
+    warmup: 2000
+    lr_min_ratio: 0.000001
+    clip: 10.0
+
+distributed:
+    fsdp_type: no_shard
+    compile: true
+    model_dtype: bf16
+    matmul_allow_tf32: false
+    selective_activation_checkpointing: false
+    tp_size: 1
+
+model:
+    dim: 1136
+    ffn_dim_multiplier: 1.125
+    ffn_dim: 2304
+    n_layers: 12
+    n_heads: 8
+    rank: 127
+    weight_tying: True
+    layer_groups: [[0], [1], [2], [3], [4], [5], [6], [7], [8], [9], [10], [11]]
+    lora_rank: 0
+
+data:
+    root_dir: /fsx-checkpoints/sanaelotfi/data
+    sources:
+        fineweb_edu_10bt_shuffled: 1.0
+    batch_size: 16
+    prefetch_size: 32
+    seq_len: 2048
+    n_views: 2
+    load_async: true
+    tokenizer: 
+        path: /fsx-checkpoints/sanaelotfi/tokenizers/llama3_tokenizer/original/tokenizer.model
+        name: tiktoken
+
+profiling:
+    run: true
+
+checkpoint:
+    dump:
+        every: 7630
+        keep: 1
+    eval:
+        every: 38150
+        keep: 1
+
+logging:
+    freq: 100
+    wandb:
+        project: final_runs_redundant_embeds
+        entity: sanaelotfi
+        name: 500M_45%
+
+eval:
+    validation:
+        max_steps: null

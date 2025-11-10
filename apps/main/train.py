@@ -1,17 +1,16 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # This software may be used and distributed according to the terms of the Llama 2 Community License Agreement.
 
-from copy import deepcopy
+from collections import defaultdict
 import gc
 import logging
 import os
 import sys
-import time
 from contextlib import ExitStack
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from pathlib import Path
 from timeit import default_timer as timer
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import numpy as np
 from omegaconf import OmegaConf
@@ -23,13 +22,15 @@ from torch.optim import lr_scheduler
 from torch.distributed.checkpoint.stateful import Stateful
 from torch.distributed._tensor import DTensor
 
-from lingua.args import dataclass_from_dict, dump_config, flatten_dict
+from lingua.args import dump_config, flatten_dict
 from lingua.checkpoint import CheckpointArgs, CheckpointManager, load_from_checkpoint
 from lingua.data import (
     DataArgs,
     PackTokensState,
     build_dataloader_from_args,
+    init_choice_state,
     init_dataloader_state_from_args,
+    setup_sources,
 )
 from lingua.distributed import (
     DistributedArgs,
@@ -39,10 +40,10 @@ from lingua.distributed import (
     get_device_mesh,
     get_is_master,
     get_world_size,
+    get_global_rank,
     parallelize_model,
     setup_env,
     setup_torch_distributed,
-    clean_env,
     requeue_slurm_job,
     check_model_value_range,
 )
@@ -56,15 +57,7 @@ from lingua.metrics import (
 from lingua.optim import OptimArgs, build_optimizer
 from lingua.profiling import ProfilerArgs, maybe_run_profiler
 from lingua.tokenizer import build_tokenizer
-# from apps.main.transformer import ( # ORIGINAL
-#     LMTransformerArgs,
-#     LMTransformer,
-#     get_num_flop_per_token,
-#     build_fsdp_grouping_plan,
-#     tp_parallelize,
-#     get_no_recompute_ops,
-# )
-from apps.main.rrt import ( # RRT
+from apps.main.rrt import (
     LMTransformerArgs,
     LMTransformer,
     get_num_flop_per_token,
@@ -73,59 +66,8 @@ from apps.main.rrt import ( # RRT
     get_no_recompute_ops,
 )
 from lingua.probe import AutoProbeD
-from lingua.stool import StoolArgs, launch_job
-import matplotlib.pyplot as plt
-from matplotlib.lines import Line2D
+
 import wandb
-
-
-def plot_grad_flow(named_parameters, save_path="gradient_flow.png", dpi=200):
-    '''Plots the gradients flowing through different layers in the net during training.
-    Usage: after loss.backward() do: plot_grad_flow(model.named_parameters())'''
-    ave_grads = []
-    max_grads = []
-    layers    = []
-    for name, p in named_parameters:
-        if p.requires_grad and "bias" not in name:
-            layers.append(name)
-            ave_grads.append(p.grad.abs().mean().item())
-            max_grads.append(p.grad.abs().max().item())
-    n = len(layers)
-
-    # dynamic figure size: 0.4" per layer, minimum width 12", height 6"
-    fig_w = max(12, n * 0.4)
-    fig_h = 6
-    plt.figure(figsize=(fig_w, fig_h), dpi=dpi)
-
-    # bars
-    x = np.arange(n)
-    plt.bar(x, max_grads, alpha=0.1, lw=1, color="c")
-    plt.bar(x, ave_grads, alpha=0.1, lw=1, color="b")
-    plt.hlines(0, 0, n-1, lw=2, color="k")
-
-    # labels
-    plt.xticks(x, layers, rotation=90, fontsize=10)
-    plt.xlim(-0.5, n-0.5)
-    plt.ylim(min(-0.001, min(ave_grads) * 1.1), max(ave_grads) * 1.1)
-    plt.xlabel("Layers")
-    plt.ylabel("Average gradient")
-    plt.title("Gradient flow")
-    plt.grid(True)
-    plt.legend(
-        [Line2D([0], [0], color="c", lw=4),
-         Line2D([0], [0], color="b", lw=4),
-         Line2D([0], [0], color="k", lw=4)],
-        ['max‐gradient', 'mean‐gradient', 'zero‐gradient'],
-        loc="upper right"
-    )
-
-    # make sure long names survive
-    plt.subplots_adjust(bottom=0.35, top=0.9)
-    plt.tight_layout()
-
-    # save hi‑res
-    plt.savefig(save_path, bbox_inches="tight", dpi=dpi)
-    plt.close()
 
 logger = logging.getLogger()
 
@@ -188,14 +130,16 @@ def validate_train_args(args: TrainArgs, output_size: int):
     if args.model.vocab_size < 0:
         logger.info(f"Setting model output size to {output_size}")
         args.model.vocab_size = output_size
-    assert (
-        args.model.vocab_size == output_size
-    ), "Vocab size should be the same as output size"
+    assert args.model.vocab_size == output_size, (
+        "Vocab size should be the same as output size"
+    )
 
     assert args.dump_dir, "Dump dir not set"
 
     if args.checkpoint.path is None:
-        logger.info(f"Setting checkpoint path to {str(Path(args.dump_dir) / 'checkpoints')}")
+        logger.info(
+            f"Setting checkpoint path to {str(Path(args.dump_dir) / 'checkpoints')}"
+        )
         args.checkpoint.path = str(Path(args.dump_dir) / "checkpoints")
 
     for source in args.data.sources:
@@ -239,23 +183,23 @@ def validate_train_args(args: TrainArgs, output_size: int):
             "Tensor parallelism has not been tested for a while, use at your own risk"
         )
 
-    assert (
-        args.probe_freq != args.profiling.mem_steps
-    ), "Don't profile during probe step"
-    assert (
-        args.probe_freq != args.profiling.profile_steps
-    ), "Don't profile during probe step"
+    assert args.probe_freq != args.profiling.mem_steps, (
+        "Don't profile during probe step"
+    )
+    assert args.probe_freq != args.profiling.profile_steps, (
+        "Don't profile during probe step"
+    )
 
     if args.logging.wandb is not None:
         args.logging.wandb.name = args.name
 
     if args.probe_freq is not None:
-        assert (
-            args.distributed.tp_size == 1
-        ), "Probing not supported with tensor parallelism"
-        assert (
-            args.distributed.selective_activation_checkpointing is False
-        ), "Probing not supported with selective activation checkpointing"
+        assert args.distributed.tp_size == 1, (
+            "Probing not supported with tensor parallelism"
+        )
+        assert args.distributed.selective_activation_checkpointing is False, (
+            "Probing not supported with selective activation checkpointing"
+        )
 
 
 preemption_flag = dict(flag=False)
@@ -265,6 +209,138 @@ def set_preemption_flag(signum, frame):
     logger.warning("Signal handler called with signal " + str(signum))
     logger.warning("Preemption ! checkpointing asap and exiting.")
     preemption_flag["flag"] = True
+
+
+def _maybe_get(cfg: Any, key: str, default=None):
+    if cfg is None:
+        return default
+    if isinstance(cfg, dict):
+        return cfg.get(key, default)
+    return getattr(cfg, key, default)
+
+
+def run_validation_eval(
+    model: torch.nn.Module,
+    tokenizer,
+    train_args: TrainArgs,
+    eval_cfg: Optional[Any],
+):
+    """Run a simple validation pass using forward losses over validation sources."""
+    val_cfg = _maybe_get(eval_cfg, "validation")
+    if val_cfg is None:
+        logger.warning("Validation config missing in eval settings; skipping eval.")
+        return {}
+
+    use_train_sources = _maybe_get(val_cfg, "use_val_from_train_src", True)
+    val_sources = list(_maybe_get(val_cfg, "sources", []))
+    if val_sources is None:
+        val_sources = []
+    val_root_dir = _maybe_get(val_cfg, "root_dir") or train_args.data.root_dir
+    if val_root_dir is None:
+        logger.warning("Validation root_dir is not set; skipping eval.")
+        return {}
+
+    sources = {}
+    for src in val_sources:
+        sources[src] = 1.0
+    if use_train_sources:
+        for src in train_args.data.sources:
+            sources[src] = 1.0
+
+    if not sources:
+        logger.warning("No validation sources configured; skipping eval.")
+        return {}
+
+    max_steps = _maybe_get(val_cfg, "max_steps")
+    multi_state = init_choice_state(
+        val_root_dir,
+        sources,
+        train_args.data.seed,
+        get_global_rank(),
+        get_world_size(),
+        "*.val.jsonl",
+    )
+    path_to_iter = setup_sources(multi_state)
+
+    # Keep track of whether we should restore training mode afterwards.
+    was_training = model.training
+    model.eval()
+
+    add_bos = train_args.data.add_bos
+    add_eos = train_args.data.add_eos
+    max_seq = train_args.data.seq_len
+
+    results = {}
+    with torch.no_grad():
+        for src, jsonl_iterator in path_to_iter.items():
+            metrics = defaultdict(list)
+            logger.info(f"Running validation on {src} ...")
+            for step, (content, state) in enumerate(jsonl_iterator):
+                if state["current_iter"] > 0:
+                    break
+                if max_steps is not None and step >= max_steps:
+                    break
+
+                text = content.get("text") or content.get("content")
+                if not text:
+                    continue
+
+                tokens = tokenizer.encode(text, add_bos=add_bos, add_eos=add_eos)
+                if len(tokens) < 2:
+                    continue
+
+                token_tensor = torch.tensor(tokens, dtype=torch.long, device="cuda")
+
+                sample_loss = 0.0
+                token_count = 0
+                for start in range(0, len(tokens) - 1, max_seq):
+                    chunk = token_tensor[start : start + max_seq + 1]
+                    if chunk.numel() < 2:
+                        continue
+                    input_ids = chunk[:-1].unsqueeze(0)
+                    labels = chunk[1:].unsqueeze(0)
+                    loss = model(input_ids, labels)
+                    num_tokens = labels.numel()
+                    sample_loss += loss.item() * num_tokens
+                    token_count += num_tokens
+
+                if token_count == 0:
+                    continue
+
+                metrics["nll"].append(sample_loss)
+                metrics["nll_per_token"].append(sample_loss / token_count)
+                if len(text) > 0:
+                    metrics["nll_per_char"].append(sample_loss / len(text))
+                metrics["avg_seqlen"].append(token_count)
+
+            if not metrics:
+                continue
+
+            aggregated = {}
+            for key, values in metrics.items():
+                if not values:
+                    continue
+                aggregated[key] = sum(values) / len(values)
+
+            if not aggregated:
+                continue
+
+            aggregated = {k: float(v) for k, v in aggregated.items()}
+            aggregated.update(dist_mean_dict(aggregated))
+
+            name = os.path.basename(src)
+            if name in results:
+                logger.warning(
+                    f"Duplicate validation source name {name}, renaming to {name}_1"
+                )
+                name = f"{name}_1"
+            results[name] = aggregated
+            logger.info(f"Validation on {src} done. Metrics: {aggregated}")
+
+    if was_training:
+        model.train()
+
+    return results
 
 
 def every_n_steps(train_state, freq, acc_step=None, acc_freq=None):
@@ -299,7 +375,10 @@ def train(args: TrainArgs):
         dp_degree = dp_mesh.size()
         dp_rank = dp_mesh.get_local_rank()
         if args.distributed.dp_shard > 1:
-            dp_rank = dp_rank * world_mesh["dp_shard"].size() + world_mesh["dp_shard"].get_local_rank()
+            dp_rank = (
+                dp_rank * world_mesh["dp_shard"].size()
+                + world_mesh["dp_shard"].get_local_rank()
+            )
             dp_degree *= world_mesh["dp_shard"].size()
 
         logger.info(f"Running on dp rank : {dp_rank}")
@@ -309,13 +388,12 @@ def train(args: TrainArgs):
         logger.info("Building model")
 
         # Initializing Model in meta device allows us to initialize models much bigger than 1 gpu's memory
-        logger.info(f"Building model with these final args: {args.model}")
         with torch.device("meta"):
             model = LMTransformer(args.model)
         logger.info("Model is built !")
 
         model_param_count = get_num_params(model)
-    
+
         model = parallelize_model(
             model,
             world_mesh,
@@ -335,8 +413,10 @@ def train(args: TrainArgs):
 
         if args.checkpoint.init_ckpt_path:
             logger.info(f"Loading initial model from {args.checkpoint.init_ckpt_path}")
-            load_from_checkpoint(args.checkpoint.init_ckpt_path, model, model_key="model") # Put model_key="" if its directly the model checkpoint
-            model.rope_embeddings.reset_parameters() # For RoPe initialization since it's a buffer it might not be loaded
+            load_from_checkpoint(
+                args.checkpoint.init_ckpt_path, model, model_key="model"
+            )  # Put model_key="" if its directly the model checkpoint
+            model.rope_embeddings.reset_parameters()  # For RoPe initialization since it's a buffer it might not be loaded
         else:
             with torch.random.fork_rng(devices=[torch.cuda.current_device()]):
                 torch.manual_seed(args.model.seed)
@@ -347,7 +427,7 @@ def train(args: TrainArgs):
 
         logger.info(f"Model size: {model_param_count:,} total parameters")
         args.parameter_count = model_param_count
-        
+
         gpu_memory_monitor = GPUMemoryMonitor("cuda")
         logger.info(
             f"GPU capacity: {gpu_memory_monitor.device_name} ({gpu_memory_monitor.device_index}) "
@@ -446,9 +526,9 @@ def train(args: TrainArgs):
                 # Here we do a fake forward and backward pass on a smaller
                 # batch size to avoid OOM
                 # This assumes the model has no stateful layers (batch norm..)
-                assert (
-                    next(model.parameters()).grad is None
-                ), "Can't probe model if grads are not reset"
+                assert next(model.parameters()).grad is None, (
+                    "Can't probe model if grads are not reset"
+                )
 
                 with probe:
                     probe.metadata = {
@@ -468,9 +548,9 @@ def train(args: TrainArgs):
                     # We zero grads to cancel this fake step
                     optimizer.zero_grad()
 
-                assert (
-                    next(model.parameters()).grad is None
-                ), "Probe model shouldn't have grads at this point"
+                assert next(model.parameters()).grad is None, (
+                    "Probe model shouldn't have grads at this point"
+                )
 
             loss = model(input_ids, labels)
 
@@ -493,8 +573,11 @@ def train(args: TrainArgs):
                 )
 
                 grad_norm = (
-                    grad_norm.full_tensor() if isinstance(grad_norm, DTensor) else grad_norm
+                    grad_norm.full_tensor()
+                    if isinstance(grad_norm, DTensor)
+                    else grad_norm
                 ).item()
+
                 optimizer.step()
                 scheduler.step()
                 optimizer.zero_grad()
@@ -576,7 +659,7 @@ def train(args: TrainArgs):
                 logger.info(
                     f"step: {train_state.step}"
                     f"  acc: {train_state.acc_step}"
-                    f"  loss: {round(loss.item(),4):>7}"
+                    f"  loss: {round(loss.item(), 4):>7}"
                     f"  grad: {grad_norm:.2e}"
                     f"  flops: {FLOPS:.2e}"
                     f"  wps: {wps:.2e}"
@@ -584,7 +667,7 @@ def train(args: TrainArgs):
                     f"  data: {data_load_time:>5}"
                     f"  lr: {curr_lr:.2e}"
                     f"  mem: {gpu_mem_stats.max_active_pct:.0f}%"
-                    f"  pow: {gpu_mem_stats.power_draw/1000} W"
+                    f"  pow: {gpu_mem_stats.power_draw / 1000} W"
                 )
 
             saved = False
@@ -602,46 +685,30 @@ def train(args: TrainArgs):
             if args.eval is not None and every_n_steps(
                 train_state, args.checkpoint.eval.every, acc_step=0
             ):
-                from apps.main.eval import (
-                    launch_eval,
-                    EVAL_FOLDER_NAME,
-                    EvalArgs,
-                )
-
-                eval_args = dataclass_from_dict(EvalArgs, args.eval)
-
-                eval_args.global_step = train_state.step
-                eval_args.ckpt_dir = str(checkpoint.existing_saves[-1])
-                eval_args.dump_dir = str(
-                    os.path.join(
-                        args.dump_dir,
-                        "evals",
-                        EVAL_FOLDER_NAME.format(train_state.step),
+                if args.async_eval_gpus:
+                    logger.warning(
+                        "Async eval via external jobs is not supported in the inline eval path; running local eval instead."
                     )
-                )
-                eval_args.metric_log_dir = args.dump_dir
 
-                #S make sure we pass the wandb config to the eval
-                if get_is_master() and getattr(args, "logging", None) and getattr(args.logging, "wandb", None) is not None:
-                    eval_args.wandb = deepcopy(args.logging.wandb)
+                eval_results = run_validation_eval(model, tokenizer, args, args.eval)
 
-                if args.async_eval_gpus is None:
-                    launch_eval(eval_args)
-                elif get_is_master():
-                    if wandb.run is not None and args.logging.wandb is not None:
-                        eval_args.wandb = deepcopy(args.logging.wandb)
-                    assert args.async_eval_gpus > 0
-                    logger.info(f"Launching evals on {args.async_eval_gpus} gpus")
-                    with clean_env():
-                        launch_job(
-                            StoolArgs(
-                                asdict(eval_args),
-                                script="apps.main.eval",
-                                copy_code=False,
-                                nodes=args.async_eval_gpus // 8,
-                                qos="lowest",
-                            )
-                        )
+                if eval_results:
+                    flat_metrics = {}
+                    for name, metrics in eval_results.items():
+                        for key, value in metrics.items():
+                            flat_metrics[f"validation/{name}/{key}"] = float(value)
+                    flat_metrics["validation/global_step"] = train_state.step
+                    flat_metrics["global_step"] = train_state.step
+
+                    if get_is_master():
+                        metric_logger.log(flat_metrics)
+                        if wandb.run is not None:
+                            try:
+                                wandb.log(flat_metrics, step=train_state.step)
+                            except Exception as exc:
+                                logger.warning(
+                                    f"Failed to log validation metrics to wandb: {exc}"
+                                )
 
             if preemption_flag["flag"]:
                 if not saved:
