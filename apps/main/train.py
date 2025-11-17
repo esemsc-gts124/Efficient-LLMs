@@ -471,6 +471,7 @@ def train(args: TrainArgs):
         metric_logger = context_stack.enter_context(
             MetricLogger(Path(args.dump_dir) / "metrics.jsonl", args)
         )
+        wandb.run.config["parameter_count"] = model_param_count
         data_loader = context_stack.enter_context(
             build_dataloader_from_args(
                 args.data,
