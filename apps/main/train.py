@@ -426,7 +426,6 @@ def train(args: TrainArgs):
         # log model size
 
         logger.info(f"Model size: {model_param_count:,} total parameters")
-        args.parameter_count = model_param_count
 
         gpu_memory_monitor = GPUMemoryMonitor("cuda")
         logger.info(
@@ -471,6 +470,7 @@ def train(args: TrainArgs):
         metric_logger = context_stack.enter_context(
             MetricLogger(Path(args.dump_dir) / "metrics.jsonl", args)
         )
+        wandb.run.config["parameter_count"] = model_param_count
         data_loader = context_stack.enter_context(
             build_dataloader_from_args(
                 args.data,
