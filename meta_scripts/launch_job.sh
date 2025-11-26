@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=weight-shared-llms
+#SBATCH --job-name=nov26_layerwise_runs
 #SBATCH --gpus-per-node=8
 #SBATCH --tasks-per-node=1
 #SBATCH --cpus-per-task=32

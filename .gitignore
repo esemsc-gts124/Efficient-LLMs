@@ -5,6 +5,7 @@ slurm-*.out
 wandb
 crappy_scripts/*
 logs/*
+new_logs/*
 checkpoints/*
 tokenizer/*
 data/*

@@ -1,7 +1,7 @@
 # NOTE TO SANAE - THE NUMBER OF STEPS HERE IS CONFIGURED TO REACH 10B TOKENS ON 8 GPU'S
 
 
-dump_dir: /fsx-scaling/sanaelotfi/weight_shared_llms/checkpoints/final_runs/LAYERWISE_v3/33M_b
+dump_dir: /fsx-optim/sanaelotfi/weight_shared/layerwise/33M_b
 name: "33M_b"
 steps: 38150
 probe_freq: null

@@ -369,6 +369,22 @@ def train(args: TrainArgs):
         world_mesh = get_device_mesh(args.distributed)
         logger.info(f"Starting job: {args.name}")
 
+        # Initialize Weights & Biases on master if configured. This ensures
+        # `wandb.run` is available before we try to access `wandb.run.config`.
+        if get_is_master() and getattr(args.logging, "wandb", None) is not None:
+            try:
+                wb_cfg = args.logging.wandb
+                init_kwargs = {}
+                if _maybe_get(wb_cfg, "project") is not None:
+                    init_kwargs["project"] = wb_cfg.project
+                if _maybe_get(wb_cfg, "entity") is not None:
+                    init_kwargs["entity"] = wb_cfg.entity
+                if _maybe_get(wb_cfg, "name") is not None:
+                    init_kwargs["name"] = wb_cfg.name
+                wandb.init(**init_kwargs)
+            except Exception as exc:  # pragma: no cover - best-effort logging
+                logger.warning(f"Failed to initialize wandb: {exc}")
+
         # build dataloader
         # need dp world size and rank
         dp_mesh = world_mesh["dp_replicate"]
@@ -471,7 +487,14 @@ def train(args: TrainArgs):
         metric_logger = context_stack.enter_context(
             MetricLogger(Path(args.dump_dir) / "metrics.jsonl", args)
         )
-        wandb.run.config["parameter_count"] = model_param_count
+        # Guard access to wandb.run in case wandb is not initialized or disabled.
+        try:
+            if wandb.run is not None:
+                wandb.run.config["parameter_count"] = model_param_count
+            else:
+                logger.info("wandb.run is None; skipping parameter_count logging")
+        except Exception as exc:  # pragma: no cover - non-critical
+            logger.warning(f"Failed to set wandb.run.config: {exc}")
         data_loader = context_stack.enter_context(
             build_dataloader_from_args(
                 args.data,
