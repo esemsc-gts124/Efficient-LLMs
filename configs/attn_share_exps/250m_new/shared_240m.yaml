@@ -1,5 +1,5 @@
-dump_dir: /fsx-scaling/sanaelotfi/weight_shared_llms/checkpoints/final_runs/attn_sharing/250m_exps/main_baseline
-name: Baseline_250m
+dump_dir: /fsx-scaling/sanaelotfi/weight_shared_llms/checkpoints/final_runs/attn_sharing/250m_exps/240m_shared
+name: Shared_240m
 steps: 42000
 probe_freq: 5000
 seed: 777
