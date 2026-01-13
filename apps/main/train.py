@@ -490,7 +490,8 @@ def train(args: TrainArgs):
         # Guard access to wandb.run in case wandb is not initialized or disabled.
         try:
             if wandb.run is not None:
-                wandb.run.config["parameter_count"] = model_param_count
+                wandb.run.config["all_parameter_count"] = model_param_count
+                wandb.run.config["non_vocab_parameter_count"] = model_param_count - tok_embeddings.weight.numel() * (1 if args.model.weight_tying else 2)
             else:
                 logger.info("wandb.run is None; skipping parameter_count logging")
         except Exception as exc:  # pragma: no cover - non-critical
