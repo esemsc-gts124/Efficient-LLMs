@@ -470,7 +470,8 @@ def train(args: TrainArgs):
         metric_logger = context_stack.enter_context(
             MetricLogger(Path(args.dump_dir) / "metrics.jsonl", args)
         )
-        wandb.run.config["parameter_count"] = model_param_count
+        wandb.run.config["all_parameter_count"] = model_param_count
+        wandb.run.config["non_vocab_parameter_count"] = model_param_count - tok_embeddings.weight.numel() * (1 if args.model.weight_tying else 2)
         data_loader = context_stack.enter_context(
             build_dataloader_from_args(
                 args.data,
