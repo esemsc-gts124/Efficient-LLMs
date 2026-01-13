@@ -56,9 +56,9 @@ checkpoint:
 logging:
     freq: 1000
     wandb:
-        project: attn_sharing
-        entity: sanaelotfi
-        name: Baseline_1b
+        project: weight-sharing
+        entity: icml-experiments
+        name: Shared_907m
 eval:
     validation:
         max_steps: 1000
