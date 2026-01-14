@@ -21,7 +21,7 @@ distributed:
     tp_size: 1
 
 model:
-    dim: 1014
+    dim: 1020
     # ffn_dim_multiplier: 1.125
     ffn_dim: 4120
     n_layers: 2

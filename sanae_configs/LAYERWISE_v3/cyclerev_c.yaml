@@ -24,7 +24,7 @@ model:
     dim: 648
     # ffn_dim_multiplier: 1.125
     ffn_dim: 2584
-    n_layers: 8
+    n_layers: 20
     n_heads: 12
     n_kv_heads: 6
     rank: 0
