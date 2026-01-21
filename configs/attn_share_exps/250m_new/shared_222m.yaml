@@ -1,4 +1,4 @@
-dump_dir: /fsx-scaling/sanaelotfi/weight_shared_llms/checkpoints/final_runs/attn_sharing/250m_exps/222m_shared.yaml
+dump_dir: /checkpoint/optim/sanaelotfi/weight_shared_llms/checkpoints/final_runs/attn_sharing/250m_exps/222m_shared.yaml
 name: Shared_222m
 steps: 42000
 probe_freq: 5000
@@ -30,7 +30,7 @@ model:
     rank: 80
     two_step: false
 data:
-    root_dir: /fsx-checkpoints/sanaelotfi/data
+    root_dir: /checkpoint/optim/sanaelotfi/data
     sources:
         fineweb_edu_10bt_shuffled: 1.0
     batch_size: 16
@@ -40,7 +40,7 @@ data:
     load_async: true
     tokenizer:
         name: sp
-        path: /fsx-checkpoints/sanaelotfi/tokenizers/llama2_tokenizer/tokenizer.model
+        path: /checkpoint/optim/sanaelotfi/tokenizers/llama2_tokenizer/tokenizer.model
 profiling:
     run: true
 checkpoint:
@@ -53,8 +53,8 @@ checkpoint:
 logging:
     freq: 500
     wandb:
-        project: weight-sharing
-        entity: icml-experiments
+        project: icml-experiments
+        entity: weight-sharing
         name: Shared_222m
 eval:
     validation:
