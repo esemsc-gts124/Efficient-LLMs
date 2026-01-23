@@ -25,7 +25,6 @@ model:
     n_kv_heads: 8
     attn_sharing: true
     head_sharing: true
-    qkv_sharing: null
     grouping: 2
     qkv_sharing:
       - - q
