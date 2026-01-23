@@ -21,7 +21,7 @@ model:
     dim: 1520
     ffn_dim_multiplier: 1.125
     n_layers: 35
-    n_heads: 16
+    n_heads: 10
     n_kv_heads: 1
     attn_sharing: false
     head_sharing: false
