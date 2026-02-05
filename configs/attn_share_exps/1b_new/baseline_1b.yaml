@@ -1,4 +1,4 @@
-dump_dir: /fsx-scaling/sanaelotfi/weight_shared_llms/checkpoints/final_runs/attn_sharing/1b_exps/1b_baseline
+dump_dir: /checkpoint/optim/sanaelotfi/weight_shared_llms/checkpoints/final_runs/attn_sharing/1b_exps/1b_baseline
 name: Baseline_1b
 steps: 84000
 probe_freq: null
@@ -26,7 +26,7 @@ model:
     attn_sharing: false
     head_sharing: false
 data:
-    root_dir: /fsx-checkpoints/sanaelotfi/data
+    root_dir: /checkpoint/optim/sanaelotfi/data
     sources:
         fineweb_edu_10bt_shuffled: 1.0
     batch_size: 8
@@ -36,7 +36,7 @@ data:
     load_async: true
     tokenizer:
         name: sp
-        path: /fsx-checkpoints/sanaelotfi/tokenizers/llama2_tokenizer/tokenizer.model
+        path: /checkpoint/optim/sanaelotfi/tokenizers/llama2_tokenizer/tokenizer.model
 profiling:
     run: true
 checkpoint:
@@ -49,8 +49,8 @@ checkpoint:
 logging:
     freq: 1000
     wandb:
-        project: weight-sharing
-        entity: icml-experiments
+        project: icml-experiments
+        entity: weight-sharing
         name: Baseline_1b
 eval:
     validation:

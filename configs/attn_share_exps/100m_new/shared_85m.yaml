@@ -1,5 +1,5 @@
-dump_dir: /fsx-scaling/sanaelotfi/weight_shared_llms/checkpoints/final_runs/attn_sharing/new_100m_exps/shared_85m
-name: shared_85m
+dump_dir: /checkpoint/optim/sanaelotfi/weight_shared_llms/checkpoints/final_runs/attn_sharing/100m_exps/85m_shared
+name: Shared_85m
 steps: 42000
 probe_freq: 5000
 seed: 777
@@ -30,7 +30,7 @@ model:
     rank: 22
     two_step: false
 data:
-    root_dir: /fsx-checkpoints/sanaelotfi/data
+    root_dir: /checkpoint/optim/sanaelotfi/data
     sources:
         fineweb_edu_10bt_shuffled: 1.0
     batch_size: 16
@@ -40,7 +40,7 @@ data:
     load_async: true
     tokenizer:
         name: sp
-        path: /fsx-checkpoints/sanaelotfi/tokenizers/llama2_tokenizer/tokenizer.model
+        path: /checkpoint/optim/sanaelotfi/tokenizers/llama2_tokenizer/tokenizer.model
 profiling:
     run: true
 checkpoint:
@@ -53,9 +53,9 @@ checkpoint:
 logging:
     freq: 500
     wandb:
-        project: new_att_sharing_runs
-        entity: sanaelotfi
-        name: shared_85m
+        project: icml-experiments
+        entity: weight-sharing
+        name: Shared_85m
 eval:
     validation:
         max_steps: null

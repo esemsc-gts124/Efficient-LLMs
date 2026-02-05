@@ -12,3 +12,6 @@ data_8gpu/*
 .venv/*
 run_jobs.sh
 data.tar.zst
+icml_logs/
+new_logs/
+./launch_job.sh

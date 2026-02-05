@@ -5,8 +5,7 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --time=4320
 #SBATCH --account=optim
-#SBATCH --qos=scaling_data_pruning_high
-#SBATCH --qos=h100_alignment_shared
+#SBATCH --qos=h200_alignment_shared
 #SBATCH --output=/home/sanaelotfi/Efficient-LLMs/icml_logs/%x_%j.out
 #SBATCH --error=/home/sanaelotfi/Efficient-LLMs/icml_logs/%x_%j.err
 # Usage: sbatch submit_job.sh path/to/config.yaml
