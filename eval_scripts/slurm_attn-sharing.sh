@@ -20,7 +20,7 @@ conda activate lingua_251209
 
 # Set these to the appropriate paths
 export REPO_PATH="/path/to/Efficient-LLMs"       # att-sharing-final branch checkout
-export OUTPUT_PATH="/path/to/eval_results/icml"   # where results will be saved
+export OUTPUT_PATH="/path/to/eval_results/attn-sharing"   # where results will be saved
 
 EVAL_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$EVAL_SCRIPT_DIR/.." || { echo "Failed to cd to repo root"; exit 1; }
