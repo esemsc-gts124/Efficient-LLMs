@@ -28,7 +28,7 @@ model:
 data:
     root_dir: /checkpoint/optim/sanaelotfi/data
     sources:
-        fineweb_edu_10bt_shuffled: 1.0
+        hq_data_20bt: 1.0
     batch_size: 8
     prefetch_size: 32
     seq_len: 2048
