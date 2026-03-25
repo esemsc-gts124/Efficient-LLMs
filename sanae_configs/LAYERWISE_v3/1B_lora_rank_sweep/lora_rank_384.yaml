@@ -1,6 +1,6 @@
-dump_dir: /checkpoint/optim/sanaelotfi/weight_shared_llms/checkpoints/colm_runs/LAYERWISE_v3/250M/250M_cycle
-name: 250M_cycle
-steps: 76300
+dump_dir: /checkpoint/optim/sanaelotfi/weight_shared_llms/checkpoints/colm_runs/LAYERWISE_v3/1B_lora_rank_sweep/bulge_lora_rank_384_1B
+name: bulge_lora_rank_384_1B
+steps: 152500
 probe_freq: null
 seed: 777
 optim:
@@ -18,31 +18,39 @@ distributed:
   dp_replicate: 8
   dp_shard: 1
 model:
-  dim: 1260
-  ffn_dim: 3840
-  n_layers: 12
-  n_heads: 9
+  dim: 1980
+  ffn_dim: 5800
+  n_layers: 20
+  n_heads: 15
   rank: 0
   weight_tying: false
   layer_groups:
   - - 0
-    - 6
   - - 1
-    - 7
-  - - 2
-    - 8
+    - 2
   - - 3
+    - 4
+    - 5
+  - - 6
+    - 7
+    - 8
     - 9
-  - - 4
-    - 10
-  - - 5
+  - - 10
     - 11
-  lora_rank: 0
+    - 12
+    - 13
+  - - 14
+    - 15
+    - 16
+  - - 17
+    - 18
+  - - 19
+  lora_rank: 384
 data:
   root_dir: /checkpoint/optim/sanaelotfi/data
   sources:
     hq_data_20bt: 1.0
-  batch_size: 16
+  batch_size: 8
   prefetch_size: 32
   seq_len: 2048
   n_views: 2
@@ -54,17 +62,17 @@ profiling:
   run: true
 checkpoint:
   dump:
-    every: 15260
+    every: 15250
     keep: 1
   eval:
-    every: 1536
+    every: 3072
     keep: 1
 logging:
   freq: 100
   wandb:
     project: colm-experiments
     entity: weight-sharing
-    name: 250M_cycle
+    name: bulge_lora_rank_384_1B
 eval:
   validation:
     max_steps: null
