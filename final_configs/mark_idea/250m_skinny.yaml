@@ -1,5 +1,5 @@
-dump_dir: /checkpoint/optim/sanaelotfi/weight_shared_llms/checkpoints/colm_runs/layerwise/mark_idea_100m_skinny
-name: 100M_mark_skinny
+dump_dir: /checkpoint/optim/sanaelotfi/weight_shared_llms/checkpoints/colm_runs/layerwise/mark_idea_250m_skinny
+name: 250M_mark_skinny
 steps: 76300
 probe_freq: null
 seed: 777
@@ -10,17 +10,17 @@ optim:
   clip: 10.0
 distributed:
   fsdp_type: no_shard
+  dp_replicate: 8
+  dp_shard: 1
   compile: true
   model_dtype: bf16
   matmul_allow_tf32: false
   selective_activation_checkpointing: false
   tp_size: 1
-  dp_replicate: 8
-  dp_shard: 1
 model:
-  dim: 512
+  dim: 672
   ffn_dim_multiplier: 1.5
-  n_layers: 40
+  n_layers: 60
   n_heads: 16
   n_kv_heads: 8
   rank: 0
@@ -66,7 +66,27 @@ model:
     - 37
   - - 38
     - 39
-  lora_rank: 207
+  - - 40
+    - 41
+  - - 42
+    - 43
+  - - 44
+    - 45
+  - - 46
+    - 47
+  - - 48
+    - 49
+  - - 50
+    - 51
+  - - 52
+    - 53
+  - - 54
+    - 55
+  - - 56
+    - 57
+  - - 58
+    - 59
+  lora_rank: 144
 data:
   root_dir: /checkpoint/optim/sanaelotfi/data
   sources:
@@ -93,7 +113,7 @@ logging:
   wandb:
     project: colm-experiments
     entity: weight-sharing
-    name: 100M_mark_idea_skinny
+    name: 250M_mark_idea_skinny
 eval:
   validation:
     max_steps: 1000

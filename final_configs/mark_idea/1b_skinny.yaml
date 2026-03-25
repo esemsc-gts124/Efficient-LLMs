@@ -1,6 +1,6 @@
-dump_dir: /checkpoint/optim/sanaelotfi/weight_shared_llms/checkpoints/colm_runs/layerwise/mark_idea_100m_skinny
-name: 100M_mark_skinny
-steps: 76300
+dump_dir: /checkpoint/optim/sanaelotfi/weight_shared_llms/checkpoints/colm_runs/layerwise/mark_idea_1b_skinny
+name: 1B_mark_skinny
+steps: 152500
 probe_freq: null
 seed: 777
 optim:
@@ -10,17 +10,17 @@ optim:
   clip: 10.0
 distributed:
   fsdp_type: no_shard
+  dp_replicate: 8
+  dp_shard: 1
   compile: true
   model_dtype: bf16
   matmul_allow_tf32: false
   selective_activation_checkpointing: false
   tp_size: 1
-  dp_replicate: 8
-  dp_shard: 1
 model:
-  dim: 512
+  dim: 1024
   ffn_dim_multiplier: 1.5
-  n_layers: 40
+  n_layers: 90
   n_heads: 16
   n_kv_heads: 8
   rank: 0
@@ -66,12 +66,62 @@ model:
     - 37
   - - 38
     - 39
-  lora_rank: 207
+  - - 40
+    - 41
+  - - 42
+    - 43
+  - - 44
+    - 45
+  - - 46
+    - 47
+  - - 48
+    - 49
+  - - 50
+    - 51
+  - - 52
+    - 53
+  - - 54
+    - 55
+  - - 56
+    - 57
+  - - 58
+    - 59
+  - - 60
+    - 61
+  - - 62
+    - 63
+  - - 64
+    - 65
+  - - 66
+    - 67
+  - - 68
+    - 69
+  - - 70
+    - 71
+  - - 72
+    - 73
+  - - 74
+    - 75
+  - - 76
+    - 77
+  - - 78
+    - 79
+  - - 80
+    - 81
+  - - 82
+    - 83
+  - - 84
+    - 85
+  - - 86
+    - 87
+  - - 88
+    - 89
+  lora_rank: 204
 data:
   root_dir: /checkpoint/optim/sanaelotfi/data
   sources:
     hq_data_20bt: 1.0
-  batch_size: 16
+  batch_size: 8
   prefetch_size: 32
   seq_len: 2048
   n_views: 2
@@ -83,17 +133,17 @@ profiling:
   run: true
 checkpoint:
   dump:
-    every: 15260
+    every: 15250
     keep: 1
   eval:
-    every: 1536
+    every: 3072
     keep: 1
 logging:
-  freq: 100
+  freq: 1000
   wandb:
     project: colm-experiments
     entity: weight-sharing
-    name: 100M_mark_idea_skinny
+    name: 1B_mark_idea_skinny
 eval:
   validation:
     max_steps: 1000
