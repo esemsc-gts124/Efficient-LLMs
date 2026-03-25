@@ -1,68 +1,69 @@
-# NOTE TO SANAE - THE NUMBER OF STEPS HERE IS CONFIGURED TO REACH 10B TOKENS ON 8 GPU'S
-
 dump_dir: /fsx-scaling/sanaelotfi/weight_shared_llms/checkpoints/final_runs/embeddings/1B_r128_embeddings
-name: "1B_r128_embeddings"
+name: 1B_r128_embeddings
 steps: 152500
 probe_freq: null
 seed: 777
 optim:
-    lr: 3e-4
-    warmup: 2000
-    lr_min_ratio: 0.000001
-    clip: 10.0
-
+  lr: 3e-4
+  warmup: 2000
+  lr_min_ratio: 1.0e-06
+  clip: 10.0
 distributed:
-    fsdp_type: no_shard
-    compile: true
-    model_dtype: bf16
-    matmul_allow_tf32: false
-    selective_activation_checkpointing: false
-    tp_size: 1
-
+  fsdp_type: no_shard
+  compile: true
+  model_dtype: bf16
+  matmul_allow_tf32: false
+  selective_activation_checkpointing: false
+  tp_size: 1
 model:
-    dim: 1840
-    ffn_dim_multiplier: 1.125
-    ffn_dim: 5632
-    n_layers: 12
-    n_heads: 8
-    rank: 128
-    weight_tying: True
-    layer_groups: [[0], [1], [2], [3], [4], [5], [6], [7], [8], [9], [10], [11]]
-    lora_rank: 0
-
+  dim: 1840
+  ffn_dim_multiplier: 1.125
+  ffn_dim: 5632
+  n_layers: 12
+  n_heads: 8
+  rank: 128
+  weight_tying: true
+  layer_groups:
+  - - 0
+  - - 1
+  - - 2
+  - - 3
+  - - 4
+  - - 5
+  - - 6
+  - - 7
+  - - 8
+  - - 9
+  - - 10
+  - - 11
+  lora_rank: 0
 data:
-    root_dir: /fsx-checkpoints/sanaelotfi/data
-    sources:
-        fineweb_edu_10bt_shuffled: 1.0
-    batch_size: 8
-    prefetch_size: 32
-    seq_len: 2048
-    n_views: 2
-    load_async: true
-    tokenizer: 
-        path: /fsx-checkpoints/sanaelotfi/tokenizers/llama3_tokenizer/original/tokenizer.model
-        name: tiktoken
-
+  root_dir: /fsx-checkpoints/sanaelotfi/data
+  sources:
+    fineweb_edu_10bt_shuffled: 1.0
+  batch_size: 8
+  prefetch_size: 32
+  seq_len: 2048
+  n_views: 2
+  load_async: true
+  tokenizer:
+    path: /fsx-checkpoints/sanaelotfi/tokenizers/llama3_tokenizer/original/tokenizer.model
+    name: tiktoken
 profiling:
-    run: true
-
+  run: true
 checkpoint:
-    dump:
-        every: 15250
-        keep: 1
-    eval:
-        every: 3050
-        keep: 1
-
+  dump:
+    every: 15250
+    keep: 1
+  eval:
+    every: 3072
+    keep: 1
 logging:
-    freq: 100
-    wandb:
-        project: final_runs_embeddings
-        entity: sanaelotfi
-        name: 1B_r128_embeddings
-
+  freq: 100
+  wandb:
+    project: final_runs_embeddings
+    entity: sanaelotfi
+    name: 1B_r128_embeddings
 eval:
-    validation:
-        max_steps: 1000
-
-
+  validation:
+    max_steps: 1000

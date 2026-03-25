@@ -1,6 +1,6 @@
-dump_dir: /fsx-scaling/sanaelotfi/weight_shared_llms/checkpoints/final_runs/embeddings/100M_r32_lora
-name: 100M_r32_lora
-steps: 38150
+dump_dir: /checkpoint/optim/sanaelotfi/weight_shared_llms/checkpoints/colm_runs/LAYERWISE_v3/250M/250M_hierarchy
+name: 250M_hierarchy
+steps: 76300
 probe_freq: null
 seed: 777
 optim:
@@ -15,12 +15,13 @@ distributed:
   matmul_allow_tf32: false
   selective_activation_checkpointing: false
   tp_size: 1
+  dp_replicate: 8
+  dp_shard: 1
 model:
-  dim: 320
-  ffn_dim_multiplier: 1.6
-  ffn_dim: 1536
+  dim: 1260
+  ffn_dim: 3840
   n_layers: 12
-  n_heads: 8
+  n_heads: 9
   rank: 0
   weight_tying: false
   layer_groups:
@@ -33,27 +34,27 @@ model:
   - - 6
     - 7
     - 8
-  - - 9
+    - 9
     - 10
-  - - 11
-  lora_rank: 32
+    - 11
+  lora_rank: 0
 data:
-  root_dir: /fsx-checkpoints/sanaelotfi/data
+  root_dir: /checkpoint/optim/sanaelotfi/data
   sources:
-    fineweb_edu_10bt_shuffled: 1.0
+    hq_data_20bt: 1.0
   batch_size: 16
   prefetch_size: 32
   seq_len: 2048
   n_views: 2
   load_async: true
   tokenizer:
-    path: /fsx-checkpoints/sanaelotfi/tokenizers/llama3_tokenizer/original/tokenizer.model
+    path: /checkpoint/optim/sanaelotfi/tokenizers/llama3_tokenizer/original/tokenizer.model
     name: tiktoken
 profiling:
   run: true
 checkpoint:
   dump:
-    every: 7630
+    every: 15260
     keep: 1
   eval:
     every: 1536
@@ -61,9 +62,9 @@ checkpoint:
 logging:
   freq: 100
   wandb:
-    project: lora_rank
-    entity: sanaelotfi
-    name: 100M_r32_lora
+    project: colm-experiments
+    entity: weight-sharing
+    name: 250M_hierarchy
 eval:
   validation:
-    max_steps: 1000
+    max_steps: null
