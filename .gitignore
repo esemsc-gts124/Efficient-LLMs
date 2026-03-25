@@ -15,4 +15,4 @@ run_jobs.sh
 data.tar.zst
 icml_logs/
 new_logs/
-./launch_job.sh
+colm_logs/*

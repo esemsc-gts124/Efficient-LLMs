@@ -1,13 +1,13 @@
 #!/bin/bash
-#SBATCH --job-name=icml_weight_sharing
+#SBATCH --job-name=colm_weight_sharing
 #SBATCH --gpus-per-node=8
 #SBATCH --tasks-per-node=1
 #SBATCH --cpus-per-task=8
 #SBATCH --time=4320
 #SBATCH --account=optim
-#SBATCH --qos=h200_alignment_shared
-#SBATCH --output=/home/sanaelotfi/Efficient-LLMs/icml_logs/%x_%j.out
-#SBATCH --error=/home/sanaelotfi/Efficient-LLMs/icml_logs/%x_%j.err
+#SBATCH --qos=h100_alignment_shared
+#SBATCH --output=/home/sanaelotfi/Efficient-LLMs/colm_logs/%x_%j.out
+#SBATCH --error=/home/sanaelotfi/Efficient-LLMs/colm_logs/%x_%j.err
 # Usage: sbatch submit_job.sh path/to/config.yaml
 
 PROJECT_DIR="/home/sanaelotfi/Efficient-LLMs"
