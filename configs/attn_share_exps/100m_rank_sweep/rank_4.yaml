@@ -1,10 +1,10 @@
-dump_dir: /checkpoint/optim/sanaelotfi/weight_shared_llms/checkpoints/colm_runs/attn_sharing/100m_exps/92m_shared
-name: Shared_92m
+dump_dir: /checkpoint/optim/sanaelotfi/weight_shared_llms/checkpoints/colm_runs/attn_sharing/100m_rank_sweep/rank_4
+name: Rank_4_100m
 steps: 76800
-probe_freq: 5000
+probe_freq: null
 seed: 777
 optim:
-  lr: 3e-4
+  lr: 0.0003
   warmup: 2000
   lr_min_ratio: 1.0
   clip: 10.0
@@ -27,7 +27,7 @@ model:
   head_sharing: true
   qkv_sharing: null
   grouping: 1
-  rank: 144
+  rank: 4
   two_step: false
 data:
   root_dir: /checkpoint/optim/sanaelotfi/data
@@ -55,7 +55,7 @@ logging:
   wandb:
     project: colm-experiments
     entity: weight-sharing
-    name: Shared_92m
+    name: Rank_4_100m
 eval:
   validation:
-    max_steps: null
+    max_steps: 1000

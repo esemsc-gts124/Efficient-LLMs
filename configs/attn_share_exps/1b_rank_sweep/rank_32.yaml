@@ -1,10 +1,10 @@
-dump_dir: /checkpoint/optim/sanaelotfi/weight_shared_llms/checkpoints/colm_runs/attn_sharing/100m_exps/92m_shared
-name: Shared_92m
-steps: 76800
-probe_freq: 5000
+dump_dir: /checkpoint/optim/sanaelotfi/weight_shared_llms/checkpoints/colm_runs/attn_sharing/1b_rank_sweep/rank_32
+name: Rank_32_1b
+steps: 153600
+probe_freq: null
 seed: 777
 optim:
-  lr: 3e-4
+  lr: 0.0003
   warmup: 2000
   lr_min_ratio: 1.0
   clip: 10.0
@@ -18,22 +18,22 @@ distributed:
   selective_activation_checkpointing: false
   tp_size: 1
 model:
-  dim: 768
+  dim: 1536
   ffn_dim_multiplier: 1.125
-  n_layers: 14
+  n_layers: 36
   n_heads: 16
   n_kv_heads: 8
   attn_sharing: true
   head_sharing: true
   qkv_sharing: null
   grouping: 1
-  rank: 144
+  rank: 32
   two_step: false
 data:
   root_dir: /checkpoint/optim/sanaelotfi/data
   sources:
     hq_data_20bt: 1.0
-  batch_size: 16
+  batch_size: 8
   prefetch_size: 32
   seq_len: 2048
   n_views: 2
@@ -45,17 +45,17 @@ profiling:
   run: true
 checkpoint:
   dump:
-    every: 7680
+    every: 15360
     keep: 1
   eval:
-    every: 1536
+    every: 3072
     keep: 1
 logging:
-  freq: 500
+  freq: 1000
   wandb:
     project: colm-experiments
     entity: weight-sharing
-    name: Shared_92m
+    name: Rank_32_1b
 eval:
   validation:
-    max_steps: null
+    max_steps: 1000
