@@ -12,6 +12,7 @@ Usage:
 import argparse
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -399,6 +400,39 @@ def run_eval(
             else:
                 print(f"  {metric}: {value}")
     print("=" * 60 + "\n")
+
+    # Log to W&B if configured via environment variables
+    wandb_project = os.environ.get("EVAL_WANDB_PROJECT")
+    wandb_entity = os.environ.get("EVAL_WANDB_ENTITY")
+    if wandb_project:
+        try:
+            import wandb
+
+            run_name = os.environ.get("EVAL_WANDB_RUN_NAME") or output_path.name
+            wandb.init(
+                project=wandb_project,
+                entity=wandb_entity,
+                name=run_name,
+                config={
+                    "checkpoint": ckpt_dir,
+                    "tasks": tasks,
+                    "num_fewshot": num_fewshot,
+                    "batch_size": batch_size,
+                    "repo_path": repo_path,
+                },
+            )
+
+            flat_metrics = {}
+            for task_name, task_results in results["results"].items():
+                for metric, value in task_results.items():
+                    if isinstance(value, (int, float)):
+                        flat_metrics[f"{task_name}/{metric}"] = value
+
+            wandb.log(flat_metrics)
+            wandb.finish()
+            logger.info(f"Results logged to W&B project '{wandb_project}' as run '{run_name}'")
+        except Exception as exc:
+            logger.warning(f"Failed to log to W&B: {exc}")
 
     return results
 
