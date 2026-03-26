@@ -25,8 +25,8 @@ export EVAL_WANDB_ENTITY="weight-sharing"
 export REPO_PATH="$HOME/layer_sharing"
 export OUTPUT_PATH="/checkpoint/optim/sanaelotfi/weight_shared_llms/eval_results/colm/mark_idea"
 
-EVAL_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$EVAL_SCRIPT_DIR/.." || { echo "Failed to cd to repo root"; exit 1; }
+EVAL_SCRIPT_DIR="/storage/home/sanaelotfi/eval/eval_scripts"
+cd /storage/home/sanaelotfi/eval || { echo "Failed to cd to repo root"; exit 1; }
 
 RUN_SCRIPT=$1
 if [ -z "$RUN_SCRIPT" ]; then
