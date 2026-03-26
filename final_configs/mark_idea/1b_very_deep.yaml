@@ -1,6 +1,7 @@
 dump_dir: /checkpoint/optim/sanaelotfi/weight_shared_llms/checkpoints/colm_runs/layerwise/mark_idea_1b_very_deep
 name: 1B_mark_very_deep
 steps: 152500
+grad_acc_steps: 4
 probe_freq: null
 seed: 777
 optim:
@@ -15,7 +16,7 @@ distributed:
   compile: true
   model_dtype: bf16
   matmul_allow_tf32: false
-  selective_activation_checkpointing: false
+  selective_activation_checkpointing: true
   tp_size: 1
 model:
   dim: 1536
@@ -115,7 +116,7 @@ data:
   root_dir: /checkpoint/optim/sanaelotfi/data
   sources:
     hq_data_20bt: 1.0
-  batch_size: 8
+  batch_size: 2
   prefetch_size: 32
   seq_len: 2048
   n_views: 2
