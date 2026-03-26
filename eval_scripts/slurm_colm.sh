@@ -3,6 +3,7 @@
 #SBATCH --gpus-per-node=1
 #SBATCH --tasks-per-node=1
 #SBATCH --cpus-per-task=8
+#SBATCH --mem=128G
 #SBATCH --time=4320
 #SBATCH --account=optim
 #SBATCH --qos=h100_alignment_shared
