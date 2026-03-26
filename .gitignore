@@ -10,3 +10,4 @@ wheels/
 .venv
 .env
 wanb_api_example.py
+colm_logs/
