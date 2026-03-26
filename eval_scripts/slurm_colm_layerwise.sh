@@ -21,6 +21,7 @@ export WANDB_API_KEY=wandb_v1_HvOQbpPUwx7huk6CruMQzlNHLyy_jnkf5WR9rgPx0ZwjwM4BRB
 export TRITON_CACHE_DIR=/checkpoint/optim/sanaelotfi/triton_cache
 export EVAL_WANDB_PROJECT="colm_all_evals"
 export EVAL_WANDB_ENTITY="weight-sharing"
+export HF_DATASETS_TRUST_REMOTE_CODE=1
 
 export REPO_PATH="$HOME/layer_sharing"
 export OUTPUT_PATH="/checkpoint/optim/sanaelotfi/weight_shared_llms/eval_results/colm/layerwise"
