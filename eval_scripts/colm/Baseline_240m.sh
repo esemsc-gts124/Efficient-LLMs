@@ -29,7 +29,7 @@ echo "============================================"
 python "$EVAL_SCRIPT" \
     --repo "$REPO_PATH" \
     --checkpoint "$CKPT_DIR" \
-    --tasks arc_easy,hellaswag,piqa,winogrande,rte,openbookqa,triviaqa,siqa,glue,unscramble \
+    --tasks arc_easy,hellaswag,piqa,winogrande,rte,openbookqa,triviaqa,social_iqa,glue,unscramble \
     --num_fewshot 5 \
     --output "${OUTPUT_PATH}/Baseline_240m"
 
