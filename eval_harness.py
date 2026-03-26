@@ -366,50 +366,17 @@ def run_eval(
         device=device,
     )
 
-    # Run evaluation
-    logger.info(f"Running evaluation on tasks: {tasks}")
-    import lm_eval
-
-    results = lm_eval.simple_evaluate(
-        model=lm,
-        tasks=tasks,
-        num_fewshot=num_fewshot,
-        limit=limit,
-        batch_size=batch_size,
-    )
-
-    # Save results
+    # Initialize W&B before eval so metrics stream live
     output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
-
-    results_file = output_path / "results.json"
-    with open(results_file, "w") as f:
-        # Only save the 'results' part which is JSON serializable
-        json.dump(results["results"], f, indent=2)
-    logger.info(f"Results saved to {results_file}")
-
-    # Print results summary
-    print("\n" + "=" * 60)
-    print("EVALUATION RESULTS")
-    print("=" * 60)
-    for task_name, task_results in results["results"].items():
-        print(f"\n{task_name}:")
-        for metric, value in task_results.items():
-            if isinstance(value, float):
-                print(f"  {metric}: {value:.4f}")
-            else:
-                print(f"  {metric}: {value}")
-    print("=" * 60 + "\n")
-
-    # Log to W&B if configured via environment variables
     wandb_project = os.environ.get("EVAL_WANDB_PROJECT")
     wandb_entity = os.environ.get("EVAL_WANDB_ENTITY")
+    wandb_run = None
     if wandb_project:
         try:
             import wandb
 
             run_name = os.environ.get("EVAL_WANDB_RUN_NAME") or output_path.name
-            wandb.init(
+            wandb_run = wandb.init(
                 project=wandb_project,
                 entity=wandb_entity,
                 name=run_name,
@@ -421,20 +388,64 @@ def run_eval(
                     "repo_path": repo_path,
                 },
             )
-
-            flat_metrics = {}
-            for task_name, task_results in results["results"].items():
-                for metric, value in task_results.items():
-                    if isinstance(value, (int, float)):
-                        flat_metrics[f"{task_name}/{metric}"] = value
-
-            wandb.log(flat_metrics)
-            wandb.finish()
-            logger.info(f"Results logged to W&B project '{wandb_project}' as run '{run_name}'")
+            logger.info(f"W&B initialized: project='{wandb_project}', run='{run_name}'")
         except Exception as exc:
-            logger.warning(f"Failed to log to W&B: {exc}")
+            logger.warning(f"Failed to initialize W&B: {exc}")
 
-    return results
+    # Run evaluation task by task so we can log incrementally
+    logger.info(f"Running evaluation on tasks: {tasks}")
+    import lm_eval
+
+    all_results = {}
+    for task_name in tasks:
+        logger.info(f"Evaluating task: {task_name}")
+        try:
+            task_results = lm_eval.simple_evaluate(
+                model=lm,
+                tasks=[task_name],
+                num_fewshot=num_fewshot,
+                limit=limit,
+                batch_size=batch_size,
+            )
+            all_results.update(task_results["results"])
+
+            # Log this task's metrics to W&B immediately
+            if wandb_run is not None:
+                flat = {}
+                for tname, tmetrics in task_results["results"].items():
+                    for metric, value in tmetrics.items():
+                        if isinstance(value, (int, float)):
+                            flat[f"{tname}/{metric}"] = value
+                wandb.log(flat)
+                logger.info(f"Logged {task_name} metrics to W&B")
+        except Exception as exc:
+            logger.warning(f"Task {task_name} failed: {exc}")
+
+    # Save results
+    output_path.mkdir(parents=True, exist_ok=True)
+    results_file = output_path / "results.json"
+    with open(results_file, "w") as f:
+        json.dump(all_results, f, indent=2)
+    logger.info(f"Results saved to {results_file}")
+
+    # Print results summary
+    print("\n" + "=" * 60)
+    print("EVALUATION RESULTS")
+    print("=" * 60)
+    for task_name, task_metrics in all_results.items():
+        print(f"\n{task_name}:")
+        for metric, value in task_metrics.items():
+            if isinstance(value, float):
+                print(f"  {metric}: {value:.4f}")
+            else:
+                print(f"  {metric}: {value}")
+    print("=" * 60 + "\n")
+
+    if wandb_run is not None:
+        wandb.finish()
+        logger.info("W&B run finished")
+
+    return {"results": all_results}
 
 
 def main():
