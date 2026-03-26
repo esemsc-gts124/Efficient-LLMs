@@ -21,7 +21,7 @@ model:
   dim: 992
   ffn_dim_multiplier: 1.125
   n_layers: 16
-  n_heads: 12
+  n_heads: 8
   rank: 0
   weight_tying: false
   layer_groups:
