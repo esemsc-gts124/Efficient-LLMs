@@ -16,7 +16,7 @@ distributed:
   compile: true
   model_dtype: bf16
   matmul_allow_tf32: false
-  selective_activation_checkpointing: true
+  selective_activation_checkpointing: false
   tp_size: 1
 model:
   dim: 1024
