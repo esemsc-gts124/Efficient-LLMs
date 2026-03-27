@@ -1,0 +1,80 @@
+dump_dir: /checkpoint/optim/sanaelotfi/weight_shared_llms/checkpoints/colm_runs/emb_proportion_FINAL/1B/1B_emb_rank_25pct_untied
+name: 1B_emb_rank_25pct_untied
+steps: 152500
+probe_freq: null
+seed: 777
+optim:
+  lr: 0.0003
+  warmup: 2000
+  lr_min_ratio: 1.0e-06
+  clip: 10.0
+distributed:
+  fsdp_type: no_shard
+  compile: true
+  model_dtype: bf16
+  matmul_allow_tf32: false
+  selective_activation_checkpointing: false
+  tp_size: 1
+  dp_replicate: 8
+  dp_shard: 1
+model:
+  dim: 1980
+  ffn_dim: 5800
+  n_layers: 20
+  n_heads: 15
+  rank: 495
+  weight_tying: false
+  layer_groups:
+  - - 0
+  - - 1
+  - - 2
+  - - 3
+  - - 4
+  - - 5
+  - - 6
+  - - 7
+  - - 8
+  - - 9
+  - - 10
+  - - 11
+  - - 12
+  - - 13
+  - - 14
+  - - 15
+  - - 16
+  - - 17
+  - - 18
+  - - 19
+  lora_rank: 0
+  factorized_untied: true
+data:
+  root_dir: /checkpoint/optim/sanaelotfi/data
+  sources:
+    hq_data_20bt: 1.0
+  batch_size: 4
+  prefetch_size: 32
+  seq_len: 2048
+  n_views: 2
+  load_async: true
+  tokenizer:
+    path: /checkpoint/optim/sanaelotfi/tokenizers/llama3_tokenizer/original/tokenizer.model
+    name: tiktoken
+profiling:
+  run: true
+checkpoint:
+  dump:
+    every: 15250
+    keep: 1
+  eval:
+    every: 3072
+    keep: 1
+logging:
+  freq: 100
+  wandb:
+    project: colm-experiments
+    entity: weight-sharing
+    name: 1B_emb_rank_25pct_untied
+eval:
+  validation:
+    max_steps: null
+grad_acc_steps: 2

@@ -74,6 +74,7 @@ class LMTransformerArgs(BaseTransformerArgs):
     rank: int = -1
     vocab_size: int = -1
     weight_tying: bool = False
+    factorized_untied: bool = False  # Separate factorized input + output embeddings (no tying)
     sliding_window: Optional[int] = None
     lora_rank: int = 8  # Rank of loras for weight sharing layers
     ffn_dim: int = None
@@ -101,6 +102,20 @@ class FactorisedTiedLinear(nn.Module):
         return logits
 
 
+
+
+# Factorised output with separate (untied) low-rank factors
+class FactorisedUntiedLinear(nn.Module):
+    """Low-rank output projection: x -> (x @ W_down) @ W_up -> logits.
+    W_down: (dim, rank), W_up: (rank, vocab_size).
+    """
+    def __init__(self, dim: int, vocab_size: int, rank: int):
+        super().__init__()
+        self.down = nn.Linear(dim, rank, bias=False)
+        self.up = nn.Linear(rank, vocab_size, bias=False)
+
+    def forward(self, x: torch.Tensor):
+        return self.up(self.down(x))
 
 
 # RRT: class to use shared weights with layer-specific LoRAs
@@ -348,6 +363,8 @@ class LMTransformer(BaseTransformer):
                 self.output = FactorisedTiedLinear(self.tok_embeddings1, self.tok_embeddings2)
             else:
                 self.output = TiedLinear(self.tok_embeddings)
+        elif args.factorized_untied and args.rank > 0:
+            self.output = FactorisedUntiedLinear(args.dim, args.vocab_size, args.rank)
         else:
             self.output = nn.Linear(
                 args.dim,
@@ -471,13 +488,23 @@ class LMTransformer(BaseTransformer):
                 b=3 * init_std,
             )
         if not self.weight_tying:
-            nn.init.trunc_normal_(
-                self.output.weight,
-                mean=0.0,
-                std=init_std,
-                a=-3 * init_std,
-                b=3 * init_std,
-            )
+            if isinstance(self.output, FactorisedUntiedLinear):
+                nn.init.trunc_normal_(
+                    self.output.down.weight, mean=0.0, std=init_std,
+                    a=-3 * init_std, b=3 * init_std,
+                )
+                nn.init.trunc_normal_(
+                    self.output.up.weight, mean=0.0, std=init_std,
+                    a=-3 * init_std, b=3 * init_std,
+                )
+            else:
+                nn.init.trunc_normal_(
+                    self.output.weight,
+                    mean=0.0,
+                    std=init_std,
+                    a=-3 * init_std,
+                    b=3 * init_std,
+                )
 
 
 

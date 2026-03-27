@@ -1,0 +1,71 @@
+dump_dir: /checkpoint/optim/sanaelotfi/weight_shared_llms/checkpoints/colm_runs/emb_proportion_FINAL/250M/250M_emb_rank_25pct_untied
+name: 250M_emb_rank_25pct_untied
+steps: 76300
+probe_freq: null
+seed: 777
+optim:
+  lr: 0.0003
+  warmup: 2000
+  lr_min_ratio: 1.0e-06
+  clip: 10.0
+distributed:
+  fsdp_type: no_shard
+  compile: true
+  model_dtype: bf16
+  matmul_allow_tf32: false
+  selective_activation_checkpointing: false
+  tp_size: 1
+  dp_replicate: 8
+  dp_shard: 1
+model:
+  dim: 1260
+  ffn_dim: 3840
+  n_layers: 12
+  n_heads: 9
+  rank: 315
+  weight_tying: false
+  layer_groups:
+  - - 0
+  - - 1
+  - - 2
+  - - 3
+  - - 4
+  - - 5
+  - - 6
+  - - 7
+  - - 8
+  - - 9
+  - - 10
+  - - 11
+  lora_rank: 0
+  factorized_untied: true
+data:
+  root_dir: /checkpoint/optim/sanaelotfi/data
+  sources:
+    hq_data_20bt: 1.0
+  batch_size: 16
+  prefetch_size: 32
+  seq_len: 2048
+  n_views: 2
+  load_async: true
+  tokenizer:
+    path: /checkpoint/optim/sanaelotfi/tokenizers/llama3_tokenizer/original/tokenizer.model
+    name: tiktoken
+profiling:
+  run: true
+checkpoint:
+  dump:
+    every: 15260
+    keep: 1
+  eval:
+    every: 1536
+    keep: 1
+logging:
+  freq: 100
+  wandb:
+    project: colm-experiments
+    entity: weight-sharing
+    name: 250M_emb_rank_25pct_untied
+eval:
+  validation:
+    max_steps: null
