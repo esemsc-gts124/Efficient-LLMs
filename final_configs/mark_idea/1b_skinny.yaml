@@ -10,9 +10,9 @@ optim:
   lr_min_ratio: 1.0e-06
   clip: 10.0
 distributed:
-  fsdp_type: no_shard
-  dp_replicate: 8
-  dp_shard: 1
+  fsdp_type: full_shard
+  dp_replicate: 1
+  dp_shard: 8
   compile: true
   model_dtype: bf16
   matmul_allow_tf32: false
