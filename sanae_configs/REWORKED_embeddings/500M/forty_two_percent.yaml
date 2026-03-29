@@ -3,7 +3,7 @@
 
 dump_dir: /fsx-scaling/sanaelotfi/weight_shared_llms/checkpoints/final_runs/REWORKED_EMBEDDINGS/500M_42%_embeddings
 name: "500M_42%_embeddings"
-steps: 38150
+steps: 76300
 probe_freq: null
 seed: 777
 optim:
@@ -59,8 +59,8 @@ checkpoint:
 logging:
     freq: 100
     wandb:
-        project: REWORKED_EMBEDDINGS
-        entity: sanaelotfi
+        project: colm-experiments
+        entity: weight-sharing
         name: 500M_42%_embeddings
 
 eval:
