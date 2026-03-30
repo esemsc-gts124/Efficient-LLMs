@@ -62,7 +62,7 @@ checkpoint:
 logging:
   freq: 100
   wandb:
-    project: colm-experiments
+    project: colm-emb-rank-sweep
     entity: weight-sharing
     name: 250M_emb_rank_55pct_tied
 eval:

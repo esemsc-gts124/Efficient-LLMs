@@ -1,6 +1,6 @@
 # NOTE TO SANAE - THE NUMBER OF STEPS HERE IS CONFIGURED TO REACH 20B TOKENS ON 8 GPU'S
 
-dump_dir: /fsx-scaling/sanaelotfi/weight_shared_llms/checkpoints/final_runs/REWORKED_EMBEDDINGS/1B_39%_embeddings
+dump_dir: /checkpoint/optim/sanaelotfi/weight_shared_llms/checkpoints/colm_runs/REWORKED_EMBEDDINGS/1B_39%_embeddings
 name: "1B_39%_embeddings"
 steps: 152500
 probe_freq: null
@@ -32,7 +32,7 @@ model:
     lora_rank: 0
 
 data:
-    root_dir: /fsx-checkpoints/sanaelotfi/data
+    root_dir: /checkpoint/optim/sanaelotfi/data
     sources:
         hq_data_20bt: 1.0
     batch_size: 8
@@ -41,7 +41,7 @@ data:
     n_views: 2
     load_async: true
     tokenizer: 
-        path: /fsx-checkpoints/sanaelotfi/tokenizers/llama3_tokenizer/original/tokenizer.model
+        path: /checkpoint/optim/sanaelotfi/tokenizers/llama3_tokenizer/original/tokenizer.model
         name: tiktoken
 
 profiling:
