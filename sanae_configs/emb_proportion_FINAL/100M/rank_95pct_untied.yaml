@@ -10,7 +10,7 @@ optim:
   clip: 10.0
 distributed:
   fsdp_type: no_shard
-  compile: true
+  compile: false
   model_dtype: bf16
   matmul_allow_tf32: false
   selective_activation_checkpointing: false
